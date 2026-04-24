@@ -1,0 +1,379 @@
+"""
+Game state management.
+
+This module defines:
+- Core data structures (TypedDicts and Pydantic models) for game state
+- Reducer functions for state merging and conflict resolution
+- Helper functions for state calculations and validations
+
+The state system uses LangGraph's annotated state approach with
+custom reducers for append-only lists and timestamp-based merging.
+
+Key Concepts:
+- GameState: Main shared state container with typed fields
+- Private states: Host and player-specific data managed separately
+- Reducers: Functions for merging concurrent state updates
+- Helper functions: Pure functions for state calculations
+"""
+
+import time
+import uuid
+from operator import add
+from typing import List, Literal, TypedDict, Annotated, Optional, Dict, Any
+from game.common.schema import Vote, Speech, PlayerPrivateState, HostPrivateState
+
+
+def merge_votes(
+    left: Dict[str, Vote],
+    right: Dict[str, Vote],
+) -> Dict[str, Vote]:
+    """
+    Merge vote records to implement reducer logic.
+
+    Rules:
+    1. For each voter_id, take the vote with the largest timestamp as the effective vote
+    2. Votes are merged regardless of phase_id (phase filtering happens elsewhere)
+
+    Args:
+        left: First dictionary of votes
+        right: Second dictionary of votes
+
+    Returns:
+        Merged dictionary of votes following timestamp-based conflict resolution
+    """
+    merged = left.copy()
+
+    def _vote_attr(vote: Vote, field: str):
+        return getattr(vote, field, vote[field])
+
+    # Merge logic: For each voter_id, select the vote with the largest timestamp
+    for voter_id, new_vote in right.items():
+        if voter_id not in merged:
+            merged[voter_id] = new_vote
+        else:
+            # Select the vote with the larger timestamp
+            current_vote = merged[voter_id]
+            if _vote_attr(new_vote, "ts") > _vote_attr(current_vote, "ts"):
+                merged[voter_id] = new_vote
+
+    return merged
+
+
+def merge_speeches(
+    left: List[Speech],
+    right: List[Speech],
+) -> List[Speech]:
+    """
+    Merge speech lists, avoiding duplicates based on player_id and round.
+
+    Args:
+        left: First list of speeches (existing)
+        right: Second list of speeches (new)
+
+    Returns:
+        Merged list of speeches with no duplicates
+    """
+    # Create a set to track unique speeches by (player_id, round)
+    seen = set()
+    merged = []
+
+    for speech in left:
+        key = (speech.get("player_id"), speech.get("round"))
+        if key not in seen:
+            seen.add(key)
+            merged.append(speech)
+
+    for speech in right:
+        key = (speech.get("player_id"), speech.get("round"))
+        if key not in seen:
+            seen.add(key)
+            merged.append(speech)
+
+    # Sort by round, then seq for consistent ordering
+    merged.sort(key=lambda s: (s.get("round", 0), s.get("seq", 0)))
+    return merged
+
+
+def merge_private_states(
+    left: Dict[str, PlayerPrivateState],
+    right: Dict[str, PlayerPrivateState],
+) -> Dict[str, PlayerPrivateState]:
+    """
+
+    Merge player private states with incremental updates.
+
+    Args:
+        left: First dictionary of player private states
+        right: Second dictionary of player private states
+
+    Returns:
+        Merged dictionary of player private states with incremental updates
+    """
+    merged = left.copy()
+
+    for player_id, new_state in right.items():
+        if player_id not in merged:
+            # New player state, just add it
+            merged[player_id] = new_state
+        else:
+            # Existing player state, merge incrementally
+            current_state = merged[player_id]
+
+            # Keep the assigned_word from the original state (shouldn't change)
+            assigned_word = getattr(current_state, "assigned_word", None)
+            if assigned_word is None:
+                assigned_word = current_state.get("assigned_word") or new_state.get("assigned_word", "")
+
+            # Use the new playerMindset from the right state (this is what gets updated)
+            player_mindset = getattr(new_state, "playerMindset", None)
+            if player_mindset is None:
+                player_mindset = new_state.get("playerMindset") or current_state.get("playerMindset", {})
+
+            merged[player_id] = {
+                "assigned_word": assigned_word,
+                "playerMindset": player_mindset,
+            }
+
+    return merged
+
+
+class GameState(TypedDict):
+    """
+    The shared state of the game.
+
+    Attributes:
+        game_id: Unique identifier for the game
+        players: Stable list of player IDs
+        current_round: Current round number (starting from 1)
+        game_phase: Current phase of the game
+        phase_id: Phase instance ID (renewed when entering speaking/voting for concurrent idempotence)
+        completed_speeches: Append-only list of completed speeches
+        eliminated_players: Append-only list of eliminated player IDs
+        current_votes: Current round vote snapshot (only used in voting)
+        winner: Endgame marker (only written by host_result)
+        host_private_state: Host's private state containing invariant game setup
+        player_private_states: Player private states managed by the graph's private state mechanism
+    """
+
+    game_id: str
+    players: List[str]
+    current_round: int
+    game_phase: Literal["setup", "speaking", "voting", "result"]
+    phase_id: str
+
+    # Use Annotated with custom reducers for proper merging
+    completed_speeches: Annotated[List[Speech], merge_speeches]
+    eliminated_players: Annotated[List[str], add]
+
+    # Current round vote snapshot (only used in voting)
+    current_votes: Annotated[Dict[str, Vote], merge_votes]
+
+    # Endgame marker (only written by host_result)
+    winner: Optional[Literal["civilians", "spies"]]
+
+    # Private states are handled by the graph's private state mechanism,
+    # not as top-level keys in the shared state.
+    # They are conceptually part of the overall state.
+    host_private_state: HostPrivateState
+    player_private_states: Annotated[
+        Dict[str, PlayerPrivateState], merge_private_states
+    ]
+    undercover_num: int
+
+
+# --- State-derived Helper Functions ---
+
+
+def alive_players(state: GameState) -> List[str]:
+    """
+    Get a list of players who are currently alive.
+
+    Args:
+        state: The current game state
+
+    Returns:
+        List of player IDs who are still in the game
+    """
+    eliminated = set(state.get("eliminated_players", []))
+    return [p for p in state["players"] if p not in eliminated]
+
+def alive_agents(state: GameState) -> List[str]:
+    """
+    Get a list of agents who are currently alive.
+
+    Args:
+        state: The current game state
+
+    Returns:
+        List of player IDs who are still in the game
+    """
+    eliminated = set(state.get("eliminated_players", []))
+    return [p for p in state["players"] if p not in eliminated]
+
+
+def next_alive_player(state: GameState) -> str | None:
+    """
+    Get the next player who should speak in the current round.
+
+    Calculates next speaker based on alive_players and completed_speeches
+    (current round sequence progress).
+
+    Args:
+        state: The current game state
+
+    Returns:
+        Player ID of the next speaker, or None if everyone has spoken this round
+    """
+    alive = alive_players(state)
+
+    # Get current round speech records, sorted by seq
+    speeches_this_round = [
+        s
+        for s in state.get("completed_speeches", [])
+        if s.get("round") == state.get("current_round")
+    ]
+    speeches_this_round.sort(key=lambda s: s.get("seq", 0))
+
+    # Players who have already spoken
+    spoken_players = {s["player_id"] for s in speeches_this_round}
+
+    # Find all alive players who haven't spoken
+    yet_to_speak = [p for p in alive if p not in spoken_players]
+
+    if not yet_to_speak:
+        return None  # Everyone has spoken this round
+
+    # Return first player who hasn't spoken (maintain initial order)
+    return yet_to_speak[0]
+
+
+def votes_ready(state: GameState) -> bool:
+    """
+    Determine if voting is ready to proceed.
+
+    Checks if all alive players have cast valid votes for the current phase.
+
+    Args:
+        state: The current game state
+
+    Returns:
+        True if all alive players have voted in the current phase, False otherwise
+    """
+    alive = set(alive_players(state))
+
+    # Only consider valid votes for current phase
+    valid_votes = get_valid_votes_for_phase(
+        state.get("current_votes", {}), state.get("phase_id")
+    )
+    valid_voters = set(valid_votes.keys())
+
+    return alive.issubset(valid_voters)
+
+
+def generate_phase_id(state: GameState) -> str:
+    """
+    Generate a new phase instance ID.
+
+    Format: {current_round}:{game_phase}:{nonce}
+
+    Args:
+        state: The current game state
+
+    Returns:
+        Unique phase instance ID string
+    """
+    nonce = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID as random part
+    return f"{state.get('current_round', 1)}:{state.get('game_phase', 'setup')}:{nonce}"
+
+
+def get_next_speech_seq(state: GameState) -> int:
+    """
+    Get the next speech sequence number.
+
+    Calculates based on current round speech records.
+
+    Args:
+        state: The current game state
+
+    Returns:
+        Next sequence number for the current round
+    """
+    current_round = state.get("current_round", 1)
+    speeches_this_round = [
+        s
+        for s in state.get("completed_speeches", [])
+        if s.get("round") == current_round
+    ]
+
+    if not speeches_this_round:
+        return 0  # First speech this round
+
+    # Get current round's maximum seq
+    max_seq = max(s.get("seq", 0) for s in speeches_this_round)
+    return max_seq + 1
+
+
+def create_speech_record(state: GameState, player_id: str, content: str) -> Speech:
+    """
+    Create a speech record with automatic sequence and timestamp assignment.
+
+    Args:
+        state: The current game state
+        player_id: ID of the player who is speaking
+        content: Speech content
+
+    Returns:
+        Speech record with assigned sequence number and timestamp
+    """
+    speech: Speech = {
+        "round": state["current_round"],
+        "seq": get_next_speech_seq(state),
+        "player_id": player_id,
+        "content": content,
+        "ts": int(time.time() * 1000),  # epoch_ms
+    }
+    return speech
+
+
+def get_valid_votes_for_phase(votes: Dict[str, Vote], phase_id: str) -> Dict[str, Vote]:
+    """
+    Get valid votes for the specified phase.
+
+    Args:
+        votes: Dictionary of votes {voter_id: Vote}
+        phase_id: The phase ID to filter by
+
+    Returns:
+        Dictionary containing only votes from the specified phase
+    """
+    valid_votes = {}
+    for voter_id, vote in votes.items():
+        # Extract phase_id from Vote object
+        vote_phase_id = getattr(vote, "phase_id", None)
+        if vote_phase_id is None and isinstance(vote, dict):
+            vote_phase_id = vote.get("phase_id")
+        if vote_phase_id == phase_id:
+            valid_votes[voter_id] = vote
+
+    return valid_votes
+
+
+def get_player_context(state: GameState, player_id: str) -> Dict[str, Any]:
+    """Build a player-specific view of the game state for LLM interactions."""
+    private_context = state.get("player_private_states", {}).get(player_id, {})
+    public_player_context = state.copy()
+    public_player_context.pop("player_private_states", None)
+    public_player_context.pop("host_private_state", None)
+
+    return {"public": public_player_context, "private": private_context}
+
+
+def merge_probs(old_probs: Dict[str, Any], new_probs: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge probability-like dictionaries, preserving model outputs."""
+    merged: Dict[str, Any] = dict(old_probs)
+    for pid, payload in new_probs.items():
+        if hasattr(payload, "model_dump"):
+            merged[pid] = payload.model_dump()
+        else:
+            merged[pid] = dict(payload)
+    return merged
