@@ -1,6 +1,6 @@
 
-from game.core.rules import assign_roles_and_words, calculate_eliminated_player, determine_winner
-from game.graph.state import GameState, next_alive_player, generate_phase_id
+from game.core.rules import assign_words, calculate_eliminated_player, determine_winner
+from game.graph.state import GameState, generate_phase_id
 from game.agents.human_agent import HumanAgent, get_human_agent_manager
 from game.agents.base import PlayerAgent, GameEvent
 from typing import List, Dict
@@ -8,6 +8,7 @@ from game.common.config import load_config
 from game.utils.logger import get_logger
 from datetime import datetime, timezone
 from game.core.agent_factory import get_game_agents
+from game.common.constant import PlayerRole, GamePhase
 
 
 logger = get_logger(__name__)
@@ -19,10 +20,11 @@ async def host_setup(state: GameState) -> dict:
     game_id = state.get("game_id", "")
 
     agents = get_game_agents(game_id)
-    assignments = assign_roles_and_words(
-        player_agents=agents,
+    assignments = assign_words(
+        player_ids=[agent.player_id for agent in agents],
         word_list=load_config().vocabulary,
         host_private_state=host_private_state,
+        undercover_num=state.get("undercover_num", 1),
     )
 
     # Assign to agents (async to notify human players)
@@ -55,7 +57,7 @@ async def assign_roles_to_agents(
         player_id = agent.player_id
         player_state = player_private_states.get(player_id, {})
         word = player_state.get("assigned_word", "")
-        role = player_roles.get(player_id, "civilian")
+        role = player_roles.get(player_id, PlayerRole.CIVILIAN)
 
         agent.assign_role_and_word(role, word)
         logger.debug("Assigned %s as %s with word %s", player_id, role, word)
@@ -66,26 +68,22 @@ async def assign_roles_to_agents(
 
 
 
-async def host_result(state: GameState) -> dict:
+async def host_judge(state: GameState) -> dict:
     """
     Host result that calculates elimination after voting.
     This is called after voting phase to determine who is eliminated.
     """
-    logger.info("Current round %d votes: %s", 
-        state.get("current_round", 0), state.get("current_votes", {})
-    )
+    current_round = state.get("current_round", 0)
     eliminated_player = calculate_eliminated_player(state)
 
-    logger.info(
-        "Host round %d voted out player: %s",
-        state.get("current_round", 0),
-        eliminated_player,
-    )
+    logger.info("Round %d voted out player: %s", current_round, eliminated_player)
     
     # Create temp state to check for winner after elimination
     temp_state = state.copy()
+    eliminated_players = state.get("eliminated_players", [])
     if eliminated_player:
-        temp_state["eliminated_players"] = state.get("eliminated_players", []) + [eliminated_player]
+        eliminated_players = eliminated_players + [eliminated_player]
+        temp_state["eliminated_players"] = eliminated_players
 
     host_private_state = state.get("host_private_state", {})
     winner = determine_winner(temp_state, host_private_state)
@@ -93,27 +91,29 @@ async def host_result(state: GameState) -> dict:
     if winner:
         logger.info("Winner determined: %s", winner)
         return {
-            "game_phase": "result",
+            "game_phase": GamePhase.RESULT,
             "winner": winner,
-            "eliminated_players": [eliminated_player] if eliminated_player else [],
+            "eliminated_players": eliminated_players,
         }
 
     # No winner, continue to next round
-    logger.info("No winner; advancing to round %d", state.get("current_round", 0) + 1)
-    updates = {
-        "game_phase": "speaking",
-        "current_round": state.get("current_round", 0) + 1,
-        "current_votes": {},
-        "phase_id": generate_phase_id(state),
-    }
+    new_round = current_round + 1
+    logger.info("No winner; advancing to round %d", new_round)
+    
     if eliminated_player:
-        updates["eliminated_players"] = state.get("eliminated_players", []) + [eliminated_player]
         # Notify agents of elimination
         game_id = state.get("game_id", "")
         agents = get_game_agents(game_id)
         await notify_elimination(agents, eliminated_player)
 
-    return updates
+    await notify_new_round(agents, current_round)
+    return {
+        "game_phase": GamePhase.SPEAKING,
+        "current_round": new_round,
+        "current_votes": {},
+        "phase_id": generate_phase_id(new_round, GamePhase.SPEAKING),
+        "eliminated_players": eliminated_players,
+    }
 
 
 async def notify_elimination(agents: List[PlayerAgent], eliminated_player: str) -> None:
@@ -137,41 +137,13 @@ async def notify_elimination(agents: List[PlayerAgent], eliminated_player: str) 
                 logger.warning("Failed to notify agent %s of elimination: %s", agent.player_id, exc)
 
 
-async def host_judge(state: GameState) -> dict:
+async def game_over(state: GameState) -> dict:
     """Host result that notifies agents of game end."""
     winner = state.get("winner")
     game_id = state.get("game_id", "")
     agents = get_game_agents(game_id)
     if winner:
         await notify_game_end(agents, winner, state)
-    return {}
-
-async def host_stage_switch(state: GameState) -> dict:
-    """Switch phase and notify agents of new round."""
-    phase = state.get("game_phase")
-    game_id = state.get("game_id", "")
-    agents = get_game_agents(game_id)
-    current_round = state.get("current_round", 0)
-
-    if phase == "setup":
-        # First transition: setup -> speaking (round 1)
-        return {"game_phase": "speaking", "current_round": 1}
-    elif phase == "speaking":
-        # Check if all alive players have spoken this round
-        if next_alive_player(state) is None:
-            # Speaking done -> move to voting
-            return {"game_phase": "voting", "phase_id": generate_phase_id(state)}
-        # Still have players who need to speak - let router go to agent_speaking_dispatch
-        return {}
-    elif phase == "voting":
-        # Check if game already ended (should not reach here, but handle gracefully)
-        if state.get("winner"):
-            return {"game_phase": "result"}
-        # Voting done -> notify and move to next round speaking
-        # Note: current_round is already incremented by host_result
-        await notify_new_round(agents, current_round)
-        return {"game_phase": "speaking", "phase_id": generate_phase_id(state)}
-
     return {}
 
 
@@ -208,7 +180,7 @@ async def notify_game_end(
     # Find spy player
     spy_player = None
     for player_id, role in player_roles.items():
-        if role == "spy":
+        if role == PlayerRole.SPY:
             spy_player = player_id
             break
 

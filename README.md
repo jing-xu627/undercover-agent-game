@@ -1,4 +1,4 @@
-# Undercover - Multi-Agent Social Deduction Game
+# Undercover - Multi-Agents Social Deduction Game
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -17,7 +17,6 @@ Undercover is a multi-agent social deduction game built with [LangGraph](https:/
 - **Human player support** - Join games through WebSocket connection and play alongside AI agents
 - **Real-time gameplay** - WebSocket-based communication for live game updates
 - **LangGraph workflow** - Game state machine built with LangGraph for robust agent orchestration
-- **React frontend** - Modern web UI for human players
 
 ## Architecture
 
@@ -53,17 +52,6 @@ cd undercover
 2. **Set up Python environment**
 
 ```bash
-# Create virtual environment
-python -m venv .venv
-
-# Activate (Windows)
-.venv\Scripts\activate
-# Or (Linux/Mac)
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-# Or use uv
 uv sync
 ```
 
@@ -118,29 +106,6 @@ game:
     - ["Sun", "Moon"]
 ```
 
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/games` | POST | Create new game |
-| `/api/games/{id}` | GET | Get game state |
-| `/ws/play/{game_id}/{player_id}` | WebSocket | Player connection |
-
-## Project Structure
-
-```
-├── game/                    # Core game logic
-│   ├── agents/             # Player agent implementations
-│   ├── api/                # REST API routes
-│   ├── core/               # Game manager & workflow
-│   ├── graph/              # LangGraph state machine
-│   └── websocket/          # WebSocket handlers
-├── ui-web/frontend/        # React frontend
-├── config.yaml             # Game configuration
-└── server.py               # Entry point
-```
-
 ## Technologies
 
 - **Backend**: Python, FastAPI, LangGraph, LangChain
@@ -163,7 +128,6 @@ Undercover 是一个基于 [LangGraph](https://langchain-ai.github.io/langgraph/
 - **真人玩家支持** - 通过 WebSocket 连接加入游戏，与 AI 智能体一起游戏
 - **实时游戏** - 基于 WebSocket 的通信，提供实时游戏更新
 - **LangGraph 工作流** - 使用 LangGraph 构建的游戏状态机，实现可靠的智能体编排
-- **React 前端** - 为真人玩家提供的现代化 Web UI
 
 ## 快速开始
 
@@ -180,12 +144,8 @@ Undercover 是一个基于 [LangGraph](https://langchain-ai.github.io/langgraph/
 git clone <repository-url>
 cd undercover
 
-# 创建虚拟环境
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-
 # 安装依赖
-pip install -r requirements.txt
+uv sync
 
 # 配置环境
 cp .env.template .env

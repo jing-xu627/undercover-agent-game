@@ -255,7 +255,7 @@
   color: #394a59;
 }
 
-/* Voting grid */
+/* Voting grid - old style, kept for reference */
 .votes-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -270,121 +270,6 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-/* Suspicion matrix with improved layout */
-.suspicion-matrix-content {
-  overflow: auto;
-  padding-right: 8px;
-  flex: 1;
-}
-
-.observer-suspicions {
-  margin-bottom: 16px;
-  padding: 12px;
-  background: #f7fafc;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-}
-
-.observer-suspicions h4 {
-  margin: 0 0 8px 0;
-  color: #2d3748;
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.suspicion-entry {
-  padding: 10px;
-  border-radius: 8px;
-  background: #ffffff;
-  margin-top: 8px;
-  cursor: pointer;
-  border: 1px solid #e2e8f0;
-  transition: all 0.2s ease;
-}
-
-.suspicion-entry:hover {
-  background: #edf2ff;
-  border-color: #c3dafe;
-}
-
-.suspicion-reason-inline {
-  font-size: 0.8em;
-  color: #bdc3c7; /* Lighter text for the reason */
-  margin-top: 5px;
-  padding-left: 10px;
-  border-left: 2px solid #34495e; /* Accent border */
-}
-
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.7);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-  color: white;
-}
-
-.loading-spinner {
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #3498db;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
-  margin-bottom: 20px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* Confidence bar with improved styling */
-.confidence-bar-container {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.confidence-bar {
-  background: #eef3f7;
-  border-radius: 999px;
-  height: 12px;
-  width: 120px;
-  overflow: hidden;
-  border: 1px solid #e2e8f0;
-}
-
-.confidence-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #38a169, #2d7a5c);
-  transition: width 0.3s ease;
-  border-radius: 999px;
-}
-
-.confidence-percentage {
-  color: #718096;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.belief-civilian {
-  color: #38a169;
-  font-weight: 600;
-}
-
-.belief-spy {
-  color: #e53e3e;
-  font-weight: 600;
 }
 
 /* Responsive adjustments for improved layout */
@@ -551,11 +436,6 @@
   width: 200px;
 }
 
-/* Small helpers */
-.muted {
-  color: #7f8c8d;
-}
-
 /* Scrollbar nicety */
 .players-list::-webkit-scrollbar,
 .conversation-container::-webkit-scrollbar,
@@ -580,121 +460,6 @@
 }
 
 /* ==================== HUMAN PLAYER STYLES ==================== */
-
-/* Mode Switcher */
-.mode-switcher {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 1000;
-}
-
-.mode-toggle {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.mode-toggle button {
-  flex: 1;
-  padding: 10px;
-  border: 2px solid #e2e8f0;
-  background: white;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.mode-toggle button.active {
-  background: #667eea;
-  color: white;
-  border-color: #667eea;
-}
-
-.mode-btn {
-  background: #667eea;
-  color: white;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
-
-.mode-btn:hover {
-  background: #5a67d8;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
-}
-
-.mode-btn.human-mode {
-  background: #38a169;
-  box-shadow: 0 4px 12px rgba(56, 161, 105, 0.3);
-}
-
-.mode-btn.human-mode:hover {
-  background: #2f855a;
-  box-shadow: 0 6px 16px rgba(56, 161, 105, 0.4);
-}
-
-/* Human Player View */
-.human-player-view {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.player-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30px;
-  padding: 20px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-
-.player-header h1 {
-  margin: 0;
-  color: #2d3748;
-  font-size: 1.5rem;
-}
-
-.player-info {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.player-id {
-  font-weight: 600;
-  color: #4a5568;
-}
-
-.connection-status {
-  font-size: 12px;
-}
-
-.connection-status.connected {
-  color: #38a169;
-}
-
-.connection-status.connecting {
-  color: #d69e2e;
-  animation: pulse 1s infinite;
-}
-
-.connection-status.disconnected {
-  color: #e53e3e;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
 
 /* Lobby */
 .human-player-lobby {
@@ -1152,175 +917,6 @@
   font-size: 14px;
 }
 
-/* Waiting View */
-.waiting-view {
-  max-width: 600px;
-  margin: 0 auto;
-}
-
-.waiting-card {
-  background: white;
-  padding: 40px;
-  border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-  text-align: center;
-  margin-bottom: 20px;
-}
-
-.waiting-card h3 {
-  margin: 0 0 20px 0;
-  color: #2d3748;
-}
-
-.word-reminder {
-  margin-bottom: 20px;
-}
-
-/* Game Events */
-.game-events {
-  background: white;
-  padding: 20px;
-  border-radius: 16px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-
-.game-events.empty {
-  text-align: center;
-  color: #718096;
-}
-
-.game-events h4 {
-  margin: 0 0 15px 0;
-  color: #2d3748;
-}
-
-.events-list {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.event-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.event-item:last-child {
-  border-bottom: none;
-}
-
-.event-icon {
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.event-time {
-  font-size: 12px;
-  color: #718096;
-  flex-shrink: 0;
-  min-width: 60px;
-}
-
-.event-body {
-  flex: 1;
-  font-size: 14px;
-}
-
-.event-speech .event-body {
-  color: #2d3748;
-}
-
-.event-elimination .event-body {
-  color: #c53030;
-}
-
-.role-reveal.spy {
-  color: #c53030;
-  font-weight: 600;
-}
-
-.role-reveal.civilian {
-  color: #38a169;
-  font-weight: 600;
-}
-
-.event-new-round .event-body {
-  color: #667eea;
-  font-weight: 600;
-}
-
-.event-game-end .event-body {
-  color: #2d3748;
-  font-weight: 700;
-}
-
-.spy-wins {
-  color: #c53030;
-}
-
-.civilians-win {
-  color: #38a169;
-}
-
-/* Game End Spy and Words Reveal */
-.spy-reveal {
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: #fff5f5;
-  border-radius: 8px;
-  border-left: 4px solid #c53030;
-}
-
-.spy-label {
-  color: #742a2a;
-  font-weight: 500;
-}
-
-.spy-name {
-  color: #c53030;
-  margin-left: 8px;
-}
-
-.words-reveal {
-  margin-top: 8px;
-  padding: 12px;
-  background: #f7fafc;
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.word-reveal-item {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.word-label {
-  color: #4a5568;
-  font-weight: 500;
-  min-width: 80px;
-}
-
-.word-value {
-  padding: 4px 12px;
-  border-radius: 6px;
-  font-weight: 700;
-}
-
-.word-value.civilian {
-  background: #c6f6d5;
-  color: #276749;
-}
-
-.word-value.spy {
-  background: #fed7d7;
-  color: #c53030;
-}
-
 /* Game End Banner in Conversation Panel */
 .game-end-banner {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1400,13 +996,6 @@
 }
 
 /* Chat History Styles */
-.empty-chat-message {
-  text-align: center;
-  color: #718096;
-  padding: 40px 20px;
-  font-style: italic;
-}
-
 .round-badge {
   background: #e2e8f0;
   color: #4a5568;
@@ -1547,17 +1136,6 @@
   margin-left: 8px;
   padding: 2px 8px;
   background: #667eea;
-  color: white;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.player-item .first-badge {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 2px 8px;
-  background: #38a169;
   color: white;
   border-radius: 999px;
   font-size: 0.75rem;

@@ -4,3 +4,12 @@ class GamePhase:
     SPEAKING = "speaking"
     VOTING = "voting"
     RESULT = "result"
+
+
+class PlayerRole:
+    CIVILIAN = "civilian"
+    SPY = "spy"
+
+class GameWinner:
+    CIVILIANS = "civilians"
+    SPIES = "spies"

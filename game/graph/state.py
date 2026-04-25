@@ -150,9 +150,10 @@ class GameState(TypedDict):
         completed_speeches: Append-only list of completed speeches
         eliminated_players: Append-only list of eliminated player IDs
         current_votes: Current round vote snapshot (only used in voting)
-        winner: Endgame marker (only written by host_result)
+        winner: Endgame marker (only written by host_judge)
         host_private_state: Host's private state containing invariant game setup
         player_private_states: Player private states managed by the graph's private state mechanism
+        undercover_num: Number of undercover players
     """
 
     game_id: str
@@ -168,7 +169,7 @@ class GameState(TypedDict):
     # Current round vote snapshot (only used in voting)
     current_votes: Annotated[Dict[str, Vote], merge_votes]
 
-    # Endgame marker (only written by host_result)
+    # Endgame marker (only written by host_judge)
     winner: Optional[Literal["civilians", "spies"]]
 
     # Private states are handled by the graph's private state mechanism,
@@ -269,21 +270,17 @@ def votes_ready(state: GameState) -> bool:
 
     return alive.issubset(valid_voters)
 
-
-def generate_phase_id(state: GameState) -> str:
+def generate_phase_id(round: int, game_phase: str) -> str:
     """
     Generate a new phase instance ID.
 
-    Format: {current_round}:{game_phase}:{nonce}
-
-    Args:
-        state: The current game state
+    Format: {round}:{game_phase}:{nonce}
 
     Returns:
         Unique phase instance ID string
     """
-    nonce = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID as random part
-    return f"{state.get('current_round', 1)}:{state.get('game_phase', 'setup')}:{nonce}"
+    nonce = str(uuid.uuid4())[:8]
+    return f"{round}:{game_phase}:{nonce}"
 
 
 def get_next_speech_seq(state: GameState) -> int:

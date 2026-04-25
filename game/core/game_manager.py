@@ -103,10 +103,6 @@ async def run_game(session: GameSession) -> None:
             async for step in session.workflow.astream(initial_state, config=config):
                 
                 # LangGraph astream yields {node_name: state_update_dict} format
-                # Check if it's a node result dict by looking at keys
-                known_nodes = {"host_setup", "host_stage_switch", "host_result", "host_judge",
-                                "agent_speaking_dispatch", "agent_voting_dispatch", 
-                                "check_votes_and_transition"}
 
                 # Check if state_update is a node result dict (keys are node names)
                 node_result_keys = [k for k in step.keys()

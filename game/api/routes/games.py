@@ -2,9 +2,8 @@
 Game management endpoints.
 """
 
-from typing import List, Optional, Any, Dict
+from typing import List, Optional
 from uuid import uuid4
-from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
@@ -15,36 +14,11 @@ from langgraph.checkpoint.memory import MemorySaver
 from game.common.config import load_config, calculate_spy_count
 from game.utils.logger import get_logger
 from game.agents.host_agent import create_agents_from_config
+from game.common.constant import PlayerRole
 
 
 logger = get_logger(__name__)
 
-
-def serialize_value(value: Any) -> Any:
-    """Recursively serialize value to JSON-compatible format."""
-    if isinstance(value, BaseModel):
-        return value.model_dump()
-    elif isinstance(value, datetime):
-        return value.isoformat()
-    elif isinstance(value, dict):
-        return {k: serialize_value(v) for k, v in value.items()}
-    elif isinstance(value, list):
-        return [serialize_value(item) for item in value]
-    elif isinstance(value, set):
-        return list(value)
-    return value
-
-
-def serialize_state(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Serialize game state to JSON-compatible dict."""
-    if not state:
-        return {}
-    result = {}
-    for key, value in state.items():
-        if key == "agents":
-            continue
-        result[key] = serialize_value(value)
-    return result
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -66,6 +40,8 @@ async def create_game(request: CreateGameRequest):
     Returns:
         Game ID and player assignments
     """
+    if request.player_count < 3:
+        raise HTTPException(status_code=400, detail="Player count must be at least 3")
     cfg = load_config()
     player_names = cfg.player_names_pool
 
@@ -138,21 +114,38 @@ async def start_game(game_id: str, background_tasks: BackgroundTasks):
 
 @router.get("/{game_id}")
 async def get_game(game_id: str):
-    """Get game state."""
+    """Get game info."""
     session = get_game_manager().get_game(game_id)
     if not session:
         raise HTTPException(status_code=404, detail="Game not found")
 
+    game_info = {}
+    state = session.state
+    if state:
+        human_player_id = list(session.human_player_ids)[0]
+
+        your_word = None
+        if human_player_id and "player_private_states" in state:
+            player_private_states = state["player_private_states"]
+            your_word = player_private_states[human_player_id].get("assigned_word")
+
+        game_info = {
+            "current_round": state.get("current_round", 0),
+            "game_phase": state.get("game_phase", "setup"),
+            "phase_id": state.get("phase_id", ""),
+            "completed_speeches": state.get("completed_speeches", []),
+            "eliminated_players": state.get("eliminated_players", []),
+            "current_votes": state.get("current_votes", {}),
+            "your_word": your_word
+        }
     return {
         "game_id": game_id,
         "status": session.status,
         "error_message": session.error_message,
-        "current_state": serialize_state(session.state),
-        "winner": session.winner,
+        "game_info": game_info,
         "players": session.players,
         "human_players": list(session.human_player_ids),
     }
-
 
 @router.get("/")
 async def list_games():
@@ -182,3 +175,28 @@ async def delete_game(game_id: str):
     
     manager.remove_game(game_id)
     return {"message": "Game deleted"}
+
+@router.get("/{game_id}/final_result")
+async def game_final_result(game_id: str):
+    """Get final result of a game."""
+    session = get_game_manager().get_game(game_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if session.status != "finished":
+        raise HTTPException(status_code=400, detail="Game not finished")
+    
+    game_state = session.state
+    spies = []
+    host_private_state = game_state["host_private_state"]
+    for player_id, player_role in host_private_state["player_roles"].items():
+        if player_role == PlayerRole.SPY:
+            spies.append(player_id)
+
+    return {
+        "game_id": game_id,
+        "winner": game_state["winner"],
+        "civilian_word": host_private_state["civilian_word"],
+        "spy_word": host_private_state["spy_word"],
+        "spies": spies,
+    }
+

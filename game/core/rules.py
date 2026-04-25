@@ -22,40 +22,34 @@ import random
 from collections import Counter
 from typing import List, Dict, Any
 
-from game.common.config import load_config, calculate_spy_count
+from game.common.config import load_config
 from game.utils.logger import get_logger
 from game.graph.state import (
     GameState,
     alive_players,
     get_valid_votes_for_phase
 )
+from game.common.constant import PlayerRole, GameWinner
 from game.common.schema import PlayerPrivateState
-from game.agents.base import PlayerAgent
 
 logger = get_logger(__name__)
 
 
-def assign_roles_and_words(
-    player_agents: List[PlayerAgent],
+def assign_words(
+    player_ids: List[str],
     word_list: List[tuple[str, str]] = None,
     host_private_state: Dict[str, Any] = None,
+    undercover_num: int = 1,
 ) -> Dict[str, Any]:
     """
-    Assigns roles (spy/civilian) and words to agent players.
+    Assigns words to agent players.
     Returns a dict to be merged into the private state.
     """
-    if len(player_agents) < 3:
-        raise ValueError("The game requires at least 3 players.")
 
-    # Calculate spy count based on player count
-    spy_count = calculate_spy_count(len(player_agents))
+    # 1. Random Select spies
+    spies = random.sample(player_ids, undercover_num)
 
-    # Select spies
-    player_ids = [pa.player_id for pa in player_agents]
-    spies = random.sample(player_ids, spy_count)
-
-    # 1. Check if words are already provided in host_private_state (custom words)
-    # If not, select from vocabulary
+    # 2. Determine words
     if (
         host_private_state
         and host_private_state.get("civilian_word")
@@ -74,19 +68,19 @@ def assign_roles_and_words(
         cfg = load_config()
         civilian_word, spy_word = random.choice(cfg.vocabulary)
 
-    # 2. Prepare private states
+    # 3. Prepare private states
     player_private_states: Dict[str, PlayerPrivateState] = {}
-    for pa in player_agents:
-        player_private_states[pa.player_id] = {
-            "assigned_word": spy_word if pa.player_id in spies else civilian_word,
+    for pid in player_ids:
+        player_private_states[pid] = {
+            "assigned_word": spy_word if pid in spies else civilian_word,
             "playerMindset": {
-                "self_belief": {"role": "civilian", "confidence": 0.5},
+                "self_belief": {"role": PlayerRole.CIVILIAN, "confidence": 0.5},
                 "suspicions": {},
             },
         }
 
     host_private_state = {
-        "player_roles": {p: ("spy" if p in spies else "civilian") for p in player_ids},
+        "player_roles": {pid: (PlayerRole.SPY if pid in spies else PlayerRole.CIVILIAN) for pid in player_ids},
         "civilian_word": civilian_word,
         "spy_word": spy_word,
     }
@@ -150,15 +144,15 @@ def determine_winner(
     alive = alive_players(state)
     roles = host_private_state.get("player_roles", {})
 
-    alive_spies = [p for p in alive if roles.get(p) == "spy"]
-    alive_civilians = [p for p in alive if roles.get(p) == "civilian"]
+    alive_spies = [p for p in alive if roles.get(p) == PlayerRole.SPY]
+    alive_civilians = [p for p in alive if roles.get(p) == PlayerRole.CIVILIAN]
 
     # Civilian victory condition: all spies are eliminated
     if not alive_spies and alive:
-        return "civilians"
+        return GameWinner.CIVILIANS
 
     # Spy victory condition: number of spies is strictly greater than civilians
     if alive and len(alive_spies) > len(alive_civilians):
-        return "spies"
+        return GameWinner.SPIES
 
     return None

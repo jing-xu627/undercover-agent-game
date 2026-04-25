@@ -40,6 +40,7 @@ function App() {
   const [votePrompt, setVotePrompt] = useState(null);
   const [actionSubmitted, setActionSubmitted] = useState(false);
   const [gameId, setGameId] = useState(null);
+  const [finalResult, setFinalResult] = useState(null);
 
   const toggleSuspicionReason = (suspicionId) => {
     setExpandedSuspicionReasons(prev => ({
@@ -216,23 +217,36 @@ function App() {
               const gameData = await gameResponse.json();
               console.log(`Poll ${attempts}:`, gameData.status, gameData.players);
 
-              // Convert to UI state
+              // Convert to UI state (using new game_info format)
+              const gameInfo = gameData.game_info || {};
               const uiState = {
-                status: gameData.current_state?.game_phase || gameData.status,
+                status: gameInfo.game_phase || gameData.status,
                 players: gameData.players || [],
-                current_round: gameData.current_state?.current_round || 1,
-                completed_speeches: gameData.current_state?.completed_speeches || [],
-                current_votes: gameData.current_state?.current_votes || {},
+                current_round: gameInfo.current_round || 1,
+                completed_speeches: gameInfo.completed_speeches || [],
+                current_votes: gameInfo.current_votes || {},
                 winner: gameData.winner,
-                eliminated_players: gameData.current_state?.eliminated_players || [],
-                player_private_states: gameData.current_state?.player_private_states || {},
-                host_private_state: gameData.current_state?.host_private_state || {}
+                eliminated_players: gameInfo.eliminated_players || [],
+                your_word: gameInfo.your_word,
+                player_private_states: {},
+                host_private_state: {}
               };
               setGameState(prev => ({ ...prev, ...uiState }));
 
               // Check if game finished
               if (gameData.status === 'finished' || gameData.status === 'error') {
                 console.log('Game finished, stopping poll');
+                // Fetch final result
+                try {
+                  const finalResponse = await fetch(`${apiUrl}/games/${createdGameId}/final_result`);
+                  if (finalResponse.ok) {
+                    const finalData = await finalResponse.json();
+                    console.log('Final result:', finalData);
+                    setFinalResult(finalData);
+                  }
+                } catch (err) {
+                  console.error('Failed to fetch final result:', err);
+                }
                 break;
               }
             }
@@ -277,6 +291,7 @@ function App() {
 
       // Stop the current game and reset backend
       setIsGameRunning(false);
+      setFinalResult(null);
       await langGraphClient.current.resetGame();
 
       // Keep the custom words for the next game
@@ -417,14 +432,7 @@ function App() {
             <div className="players-list">
               {getOrderedPlayers().map((playerId, index) => {
                 const isEliminated = gameState.eliminated_players.includes(playerId);
-                const privateState = gameState.player_private_states?.[playerId] || {};
-                const playerRole = gameState.host_private_state?.player_roles?.[playerId];
-                const civilianWord = gameState.host_private_state?.civilian_word;
-                const spyWord = gameState.host_private_state?.spy_word;
-                const assignedWord = privateState.assigned_word ||
-                                   (playerRole === 'civilian' ? civilianWord :
-                                    playerRole === 'spy' ? spyWord : t('role_unknown'));
-                const selfBelief = privateState.playerMindset?.self_belief;
+                const assignedWord = playerId === humanPlayerId ? gameState.your_word :  t('role_unknown');
                 const isHumanPlayer = playerId === humanPlayerId;
 
                 return (
@@ -434,8 +442,7 @@ function App() {
                   >
                     <div className="player-avatar">
                       {isHumanPlayer ? '🎮' :
-                       isEliminated ? '💀' :
-                       selfBelief?.role === 'civilian' ? '👤' : '🕵️'}
+                       isEliminated ? '💀' : '👤'}
                     </div>
                     <div className="player-details">
                       <div className="player-name">
@@ -465,32 +472,30 @@ function App() {
             {humanPlayerId && renderHumanPlayerUI()}
 
             {/* Game End Info Banner */}
-            {gameState.status === 'result' && gameState.winner && (
+            {gameState.status === 'result' && finalResult && (
               <div className="game-end-banner">
-                <div className={`winner-announcement ${gameState.winner === 'spies' ? '卧底胜利' : '平民胜利'}`}>
-                  {gameState.winner === 'spies' ? '卧底胜利!': '平民胜利!'}
+                <div className={`winner-announcement ${finalResult.winner === 'spies' ? '卧底胜利' : '平民胜利'}`}>
+                  {finalResult.winner === 'spies' ? '卧底胜利!': '平民胜利!'}
                 </div>
-                {gameState.player_private_states && (
+                {finalResult.spies && finalResult.spies.length > 0 && (
                   <div className="spy-reveal-info">
                     <span className="spy-reveal-label">卧底是:</span>
-                      {Object.entries(gameState.player_private_states)
-                        .filter(([_,data]) => data.role === 'spy')
-                        .map(([playerName, _]) => (
-                          <strong key={playerName} className="spy-reveal-name">
-                            {playerName}
-                          </strong>
-                      ))}
+                    {finalResult.spies.map((playerName) => (
+                      <strong key={playerName} className="spy-reveal-name">
+                        {playerName}
+                      </strong>
+                    ))}
                   </div>
                 )}
-                {gameState.host_private_state?.civilian_word && gameState.host_private_state?.spy_word && (
+                {finalResult.civilian_word && finalResult.spy_word && (
                   <div className="words-reveal-info">
                     <div className="word-reveal-row">
                       <span className="word-reveal-label">{'平民词'}:</span>
-                      <strong className="word-reveal-value civilian">{gameState.host_private_state.civilian_word}</strong>
+                      <strong className="word-reveal-value civilian">{finalResult.civilian_word}</strong>
                     </div>
                     <div className="word-reveal-row">
                       <span className="word-reveal-label">{'卧底词'}:</span>
-                      <strong className="word-reveal-value spy">{gameState.host_private_state.spy_word}</strong>
+                      <strong className="word-reveal-value spy">{finalResult.spy_word}</strong>
                     </div>
                   </div>
                 )}

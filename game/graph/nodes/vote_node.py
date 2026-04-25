@@ -12,10 +12,8 @@ from game.core.agent_factory import get_game_agents
 logger = get_logger(__name__)
 
 
-async def dispatch_voting_phase(state: GameState) -> Dict[str, Any]:
+async def collect_voting_phase(state: GameState) -> Dict[str, Any]:
     """
-    Dispatch voting phase to all alive agents.
-    
     Collects votes from all alive agents concurrently.
     
     """
@@ -31,8 +29,9 @@ async def dispatch_voting_phase(state: GameState) -> Dict[str, Any]:
     
     async def collect_vote_from_agent(agent: PlayerAgent) -> tuple[str, str]:
         """Collect vote from a single agent. Returns (player_id, vote_target)."""
+        player_id = agent.player_id
         context = VoteContext(
-            player_id=agent.player_id,
+            player_id=player_id,
             current_round=current_round,
             alive_players=alive,
             self_belief=agent.mindset.get("self_belief", {}),
@@ -40,25 +39,22 @@ async def dispatch_voting_phase(state: GameState) -> Dict[str, Any]:
             game_history=[],  # Could be populated from state
         )
         
+        valid_targets = [pid for pid in alive if pid != player_id]
         try:
             vote_target = await agent.vote(context)
             
             # Validate vote
-            if vote_target not in alive:
+            if vote_target not in valid_targets:
                 logger.warning("Agent %s voted for invalid target %s, randomizing",
-                             agent.player_id, vote_target)
-                
-                valid_targets = [p for p in alive if p != agent.player_id]
+                             player_id, vote_target)
                 vote_target = random.choice(valid_targets) if valid_targets else alive[0]
             
-            return agent.player_id, vote_target
-            
+            return player_id, vote_target
         except Exception as exc:
-            logger.error("Agent %s failed to vote: %s", agent.player_id, exc)
+            logger.error("Agent %s failed to vote: %s", player_id, exc)
             # Random fallback
-            valid_targets = [p for p in alive if p != agent.player_id]
             vote_target = random.choice(valid_targets) if valid_targets else alive[0]
-            return agent.player_id, vote_target
+            return player_id, vote_target
     
     # Collect all votes concurrently
     alive_agents = [agent for agent in agents if agent.is_alive]
@@ -73,7 +69,6 @@ async def dispatch_voting_phase(state: GameState) -> Dict[str, Any]:
             continue
             
         player_id, vote_target = result
-        
         vote = Vote(
             target=vote_target,
             ts=int(datetime.now().timestamp() * 1000),

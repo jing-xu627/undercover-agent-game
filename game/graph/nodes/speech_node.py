@@ -1,24 +1,18 @@
-import asyncio
+
 from datetime import datetime
-from typing import Any, Dict, List, TYPE_CHECKING
+from typing import Any, Dict, List
 
 from game.agents.base import PlayerAgent, SpeechContext, GameEvent
 from game.utils.logger import get_logger
-from game.graph.state import GameState, Speech, create_speech_record
-from game.metrics import GameMetrics
+from game.graph.state import GameState, Speech, create_speech_record, generate_phase_id
 from game.core.agent_factory import get_game_agents
 from game.common.constant import GamePhase
 
-if TYPE_CHECKING:
-    from game.metrics import GameMetrics
-
 logger = get_logger(__name__)
 
-async def dispatch_speaking_phase(state: GameState) -> Dict[str, Any]:
+async def collect_speeches_phase(state: GameState) -> Dict[str, Any]:
     """
-    Dispatch speaking phase to all alive agents.
-    
-    collects speeches from ALL alive agents concurrently. 
+    Collect speeches from ALL alive agents sequentially. 
     The order of speeches in the result reflects the order
     they were received (not turn order).
     """
@@ -56,22 +50,17 @@ async def dispatch_speaking_phase(state: GameState) -> Dict[str, Any]:
             # Fallback speech
             return agent.player_id, f"I'm not sure about the word.", agent.mindset
     
-    # Collect all speeches concurrently
-    alive_agents = [agent for agent in agents if agent.is_alive]
-    tasks = [collect_speech_from_agent(agent) for agent in alive_agents]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # Process results
+    player_private_states = state["player_private_states"]
     speeches: List[Speech] = []
-    player_private_states: Dict[str, Dict] = {}
-    
-    agents_id_map = {agent.player_id: agent for agent in agents}
-    for result in results:
-        if isinstance(result, Exception):
-            logger.error("Speech collection error: %s", result)
-            continue
-            
+
+    # Collect speeches sequentially (one by one)
+    alive_agents = [agent for agent in agents if agent.is_alive]
+    for agent in alive_agents:
+        result = await collect_speech_from_agent(agent)
         player_id, speech_text, mindset = result
+
+        # Save mindset to private state
+        player_private_states[player_id]["mindset"] = mindset
         
         # Create speech record
         speech_record = create_speech_record(
@@ -80,52 +69,27 @@ async def dispatch_speaking_phase(state: GameState) -> Dict[str, Any]:
             content=speech_text,
         )
         speeches.append(speech_record)
-        
-        # Save mindset to private state
-        player_private_states[player_id] = {
-            "mindset": mindset,
-            "word": agents_id_map[player_id].word,
-            "role": agents_id_map[player_id].role,
-        }
-        
-        # Record metrics
-        metrics = GameMetrics()
-        if metrics.enabled:
-            metrics.on_speech(
-                game_id=state.get("game_id"),
-                round_number=current_round,
-                player_id=player_id,
-                content=speech_text,
-            )
-            metrics.on_player_mindset_update(
-                game_id=state.get("game_id"),
-                round_number=current_round,
-                phase="speaking",
-                player_id=player_id,
-                mindset=mindset,
-            )
-        
-        logger.info("Collected speech from %s: %s", player_id, speech_text[:50])
-    
-    # Broadcast events to all agents (so they know what others said)
-    for speech in speeches:
+
         event = GameEvent(
             type="speech",
             timestamp=datetime.now(),
             data={
-                "player_id": speech["player_id"],
-                "content": speech["content"],
+                "player_id": player_id,
+                "content": speech_text,
                 "round": current_round,
             }
         )
         for agent in alive_agents:
             try:
-                await agent.observe(event)
+                if agent.player_id != player_id:
+                    await agent.observe(event)
             except Exception as exc:
                 logger.warning("Failed to notify agent %s: %s", agent.player_id, exc)
     
     return {
         "completed_speeches": speeches,
         "player_private_states": player_private_states,
+        "game_phase": GamePhase.VOTING,
+        "phase_id": generate_phase_id(current_round, GamePhase.VOTING),
     }
 
