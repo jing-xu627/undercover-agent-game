@@ -48,7 +48,6 @@ async def assign_roles_to_agents(
         assignments: Contains host_private_state and player_private_states
     """
 
-    manager = get_human_agent_manager()
     host_private_state = assignments.get("host_private_state", {})
     player_private_states = assignments.get("player_private_states", {})
     player_roles = host_private_state.get("player_roles", {})
@@ -61,10 +60,6 @@ async def assign_roles_to_agents(
 
         agent.assign_role_and_word(role, word)
         logger.debug("Assigned %s as %s with word %s", player_id, role, word)
-
-        # Notify human agents of their role
-        if isinstance(agent, HumanAgent):
-            await manager.notify_role_reveal(player_id, role, word)
 
 
 
@@ -94,6 +89,7 @@ async def host_judge(state: GameState) -> dict:
             "game_phase": GamePhase.RESULT,
             "winner": winner,
             "eliminated_players": eliminated_players,
+            "current_votes": {},
         }
 
     # No winner, continue to next round
@@ -106,7 +102,7 @@ async def host_judge(state: GameState) -> dict:
         agents = get_game_agents(game_id)
         await notify_elimination(agents, eliminated_player)
 
-    await notify_new_round(agents, current_round)
+    await notify_new_round(agents, new_round)
     return {
         "game_phase": GamePhase.SPEAKING,
         "current_round": new_round,

@@ -1,9 +1,10 @@
+import random
 from typing import Dict, Optional
 from langchain.tools import tool
 
 from game.graph.state import GameState, alive_players
 from game.common.schema import PlayerMindset
-from game.strategy.serialization import normalize_mindset, to_plain_dict
+from game.utils.serialization import normalize_mindset, to_plain_dict
 
 
 def vote_tools(
@@ -72,11 +73,13 @@ def vote_tools(
         player_scores = _score_players(mindset_state)
 
         if player_scores:
-            return min(player_scores, key=player_scores.get)
+            min_score = min(player_scores.values())
+            tied_players = [p for p, s in player_scores.items() if s == min_score]
+            return random.choice(tied_players)
 
         other_alive = [p for p in alive if p != bound_player_id]
         if other_alive:
-            return other_alive[0]
+            return random.choice(other_alive)
         if alive:
             return bound_player_id
         raise ValueError("No alive players to vote for.")
@@ -97,7 +100,7 @@ def vote_tools(
 
         other_alive = [p for p in alive if p != bound_player_id]
         if other_alive:
-            return other_alive[0]
+            return random.choice(other_alive)
         if alive:
             return bound_player_id
         raise ValueError("No alive players to vote for.")

@@ -83,12 +83,10 @@ class HumanAgent(PlayerAgent):
         """
         logger.info("HumanAgent %s speak() called, connected=%s (round %d)", 
                      self._player_id, self._connected, context.current_round)
-        print(f"[HumanAgent {self._player_id}] speak() called, connected={self._connected}", flush=True)
-
+        
         # Check if connected - if not, return default immediately without blocking
         if not self._connected:
             logger.warning("HumanAgent %s not connected, using default speech", self._player_id)
-            print(f"[HumanAgent {self._player_id}] NOT CONNECTED - using default", flush=True)
             return self._get_default_speech(context)
 
         # Create pending action
@@ -335,27 +333,6 @@ class HumanAgentManager:
             await websocket.send_json(message)
         except Exception as exc:
             logger.error("Failed to send event to %s: %s", player_id, exc)
-
-    async def notify_role_reveal(self, player_id: str, role: str, word: str) -> None:
-        """Send role and word assignment to human player via WebSocket."""
-        websocket = self._get_websocket_for_player(player_id)
-        if websocket is None:
-            logger.warning("Cannot send role reveal: no WebSocket for player %s", player_id)
-            return
-        
-        message = {
-            "type": "role_reveal",
-            "player_id": player_id,
-            "role": role,
-            "word": word,
-            "is_spy": role == "spy",
-        }
-        
-        try:
-            await websocket.send_json(message)
-            logger.info("Sent role reveal to %s: role=%s, word=%s", player_id, role, word)
-        except Exception as exc:
-            logger.error("Failed to send role reveal to %s: %s", player_id, exc)
 
     async def handle_human_input(self, player_id: str, input_data: str) -> bool:
         """

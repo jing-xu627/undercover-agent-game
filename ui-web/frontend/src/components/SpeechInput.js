@@ -58,19 +58,6 @@ function SpeechInput({ prompt, onSubmit, disabled }) {
           </div>
         </div>
 
-        {prompt.completed_speeches?.length > 0 && (
-          <div className="previous-speeches">
-            <ul>
-              {prompt.completed_speeches.map((speech, idx) => (
-                <li key={idx}>
-                  <span className="speaker">{speech.player}:</span>
-                  <span className="content">{speech.content}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         <form onSubmit={handleSubmit}>
           <div className="input-group">
             <textarea

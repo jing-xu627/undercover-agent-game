@@ -8,8 +8,8 @@ from html import escape
 from typing import List, Sequence, Dict, Any
 
 from game.common.schema import Speech, PlayerMindset, SelfBelief
-from game.strategy.builders.prompt_builder import determine_clarity
-from game.strategy.serialization import to_plain_dict
+from game.utils.prompt_builder import determine_clarity
+from game.utils.serialization import to_plain_dict
 
 
 def _as_mapping(value: Any) -> Dict[str, Any]:
@@ -147,7 +147,7 @@ def build_inference_user_context(
     return (
         "<inference_context>"
         f"{players_xml}{mindset_xml}{speeches_xml}"
-        "<response_guidance>Use the PlayerMindset tool only; do not provide prose or explanations.</response_guidance>"
+        "<response_guidance>Return ONLY a valid JSON object matching the PlayerMindset schema. Do not include any text outside the JSON.</response_guidance>"
         "</inference_context>"
     )
 
@@ -212,7 +212,7 @@ def build_speech_user_context(
         f'<strategy round="{current_round}" clarity="{clarity_code}">{escape(clarity_desc)}</strategy>'
         f'<speaker id="{escape(me)}" />'
         f'{alive_block}<current_round index="{current_round}" />{plan_section}{speech_logs_block}'
-        "<response_guidance>Call the plan_speech tool if you need to adjust strategy, then return exactly one line of speech without emojis, labels, or extra commentary.</response_guidance>"
+        "<response_guidance>Call the plan_speech tool if you need to adjust strategy, then return exactly one line of speech without emojis, labels or extra commentary.</response_guidance>"
         "</speech_context>"
     )
 

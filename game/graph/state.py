@@ -18,7 +18,6 @@ Key Concepts:
 
 import time
 import uuid
-from operator import add
 from typing import List, Literal, TypedDict, Annotated, Optional, Dict, Any
 from game.common.schema import Vote, Speech, PlayerPrivateState, HostPrivateState
 
@@ -94,6 +93,31 @@ def merge_speeches(
     return merged
 
 
+def merge_eliminated_players(
+    left: List[str],
+    right: List[str],
+) -> List[str]:
+    """
+    Merge eliminated player lists, avoiding duplicates.
+
+    Args:
+        left: First list of eliminated player IDs (existing)
+        right: Second list of eliminated player IDs (new)
+
+    Returns:
+        Merged list of eliminated player IDs with no duplicates, preserving order
+    """
+    seen = set(left)
+    merged = list(left)
+
+    for player_id in right:
+        if player_id not in seen:
+            seen.add(player_id)
+            merged.append(player_id)
+
+    return merged
+
+
 def merge_private_states(
     left: Dict[str, PlayerPrivateState],
     right: Dict[str, PlayerPrivateState],
@@ -149,8 +173,8 @@ class GameState(TypedDict):
         phase_id: Phase instance ID (renewed when entering speaking/voting for concurrent idempotence)
         completed_speeches: Append-only list of completed speeches
         eliminated_players: Append-only list of eliminated player IDs
-        current_votes: Current round vote snapshot (only used in voting)
-        winner: Endgame marker (only written by host_judge)
+        current_votes: Current round vote snapshot
+        winner: Game over marker
         host_private_state: Host's private state containing invariant game setup
         player_private_states: Player private states managed by the graph's private state mechanism
         undercover_num: Number of undercover players
@@ -164,7 +188,7 @@ class GameState(TypedDict):
 
     # Use Annotated with custom reducers for proper merging
     completed_speeches: Annotated[List[Speech], merge_speeches]
-    eliminated_players: Annotated[List[str], add]
+    eliminated_players: Annotated[List[str], merge_eliminated_players]
 
     # Current round vote snapshot (only used in voting)
     current_votes: Annotated[Dict[str, Vote], merge_votes]

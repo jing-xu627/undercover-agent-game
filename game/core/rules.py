@@ -1,5 +1,5 @@
 """
-Game logic and rules implementation for the "Who Is Spy" game.
+Game logic and rules implementation.
 
 This module contains the core game mechanics:
 - Role and word assignment
@@ -11,11 +11,6 @@ Game Rules:
 - Civilians get one word, spies get a related but different word
 - Players describe their words in turns, then vote to eliminate suspects
 - Game ends when all spies are eliminated or spies outnumber civilians
-
-Key Functions:
-- assign_roles_and_words: Random role assignment with word selection
-- calculate_eliminated_player: Vote counting with tie-breaking
-- determine_winner: Win condition checking based on alive players
 """
 
 import random

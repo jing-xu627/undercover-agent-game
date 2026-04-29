@@ -8,7 +8,7 @@ game:
   # Vocabulary pairs for the game
   # Each pair contains (civilian_word, spy_word)
   vocabulary:
-    - ["Shakespeare", "Dumas"]
+    - ["高铁", "地铁"]
     - ["太阳", "月亮"]
     - ["猫", "狗"]
     - ["咖啡", "茶"]
@@ -24,18 +24,16 @@ game:
     - "Frank"
     - "Grace"
     - "Henry"
-    - "Ivy"
     - "Jack"
-    - "Katherine"
     - "Leo"
-    - "Mia"
+
     - "Noah"
     - "Olivia"
     - "Peter"
     - "Quinn"
     - "Rachel"
+    - "Rose"
     - "Sam"
-    - "Tina"
 
   # Game settings
   settings:

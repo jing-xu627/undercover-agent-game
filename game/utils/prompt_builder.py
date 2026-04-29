@@ -7,25 +7,24 @@ Manages all prompt templates and role-specific strategy determination.
 from typing import Dict
 
 from game.common.schema import SelfBelief
-from game.strategy.serialization import to_plain_dict
+from game.utils.serialization import to_plain_dict
 
 
 _INFERENCE_PROMPT_PREFIX = """You are a player in the game "Who is the Spy". Your goal is to analyze the game state and update your beliefs.
 - Pay close attention to whether other players' descriptions match your understanding of your word.
-- If descriptions seem inconsistent with your word, you might be the Spy.
+- If majority of descriptions seem inconsistent with your word, you might be the Spy.
 - IMPORTANT: You MUST respond in the same language as the user's word, which is: "{my_word}".
 
 **Game Rules:**
-- Players: {player_count}, Spies: {spy_count}
-- Civilians get one word, the Spy gets a related one.
+- Players: {player_count}, Alives: {alive_count}, Spies: {spy_count}.
+- The game is not over yet. It ends only when either all spies have been voted out, or the number of spies is equal to or greater than the number of civilians.
+- Civilians get one word, the Spy gets a similar one.
 - Your word is: "{my_word}"
 - You MUST respond in the same language as your word.
 
 **Your Task:**
-1.  First, complete the `<thinking>` block to structure your analysis.
-2.  Then, based on your analysis, use the `PlayerMindset` tool to output your updated beliefs.
+First, analyze the game following this structure:
 
----
 <thinking>
 **1. Self-Role Analysis:**  
 *   **Evidence FOR being SPY:**  
@@ -39,15 +38,12 @@ _INFERENCE_PROMPT_PREFIX = """You are a player in the game "Who is the Spy". You
 *   **Player [ID]:**  
     *   **Evidence:** (Analyze their speech. Is it consistent with the group? Is it an outlier? Is it vague?)    
     *   **Conclusion:** (Based on the evidence, are they likely a Spy or a Civilian?)
-    *   **Player [ID]:**  
-    *   ... (Repeat for all other alive players)
 </thinking>
----
 
 **Decision & Confidence Rules:**
 - **Self-Role:**
     - Treat strong conflicts (two or more players matching each other while clashing with your word) as a **major clue** that you might be the Spy.
-    - If the evidence is mixed, stay uncertain and keep probing; do **not** force a Spy conclusion if the group could still share your concept.
+    - If the evidence is mixed, stay uncertain and keep probing; don't force a Spy conclusion if the group could still share your concept.
 - **Self-Confidence:**
     - If you are convinced you are the **Spy**, set confidence to **0.8** (very certain but still cautious).
     - If you lean Civilian and have a clear suspect, set confidence to **0.75**.
@@ -57,8 +53,10 @@ _INFERENCE_PROMPT_PREFIX = """You are a player in the game "Who is the Spy". You
     - Very vague speakers earn light suspicion. Mark them as **Spy** around **0.55**.
     - Players aligned with the consensus should be tagged **Civilian** with confidence **0.75**.
 
-**Final Instruction:**
-Now, use the `PlayerMindset` tool to return the updated state based on your completed analysis. Do not provide any other text outside the tool output.
+**Final Output:**
+Return ONLY a valid JSON object matching the PlayerMindsetModel schema with your `self_belief` (role and confidence) 
+and `suspicions` (dict of player_id to their suspected role, confidence, and reason).
+Do not include any text outside the JSON.
 """
 
 _CIVILIAN_SPEECH_PROMPT_PREFIX = """You are a civilian player in the party game "Who is the Spy". Your secret word is "{my_word}" and it is your turn to speak.
@@ -67,16 +65,17 @@ Must:
 - Reply in the same language as "{my_word}".
 - Output exactly one line of plain text; no labels, emojis, quotes, or meta reasoning.
 - Tell the truth about your word; do not say the word itself or obvious synonyms.
-- Do not mention roles, probabilities, mechanics, questions, accusations, or player names.
-- Avoid repeating another player's description this round.
-- Stay concise: 18-35 characters for Chinese/Japanese/Korean, otherwise 20-40 words.
+- Do not mention roles, probabilities, mechanics, questions, accusations or player names.
+- CRITICAL: Check ALL speeches in <speech_logs>. Your description must be semantically DIFFERENT from everything said before.
+- Stay concise: no more than 100 characters/words.
 Guide:
 - Follow the <strategy> tag in the <speech_context> tag to match the desired clarity for this turn.
-- Review the <planning> tag generated via the `plan_speech` tool and align your clue with its goal.
+- Review the <planning> tag and align your clue with its goal.
+- Review ALL speeches in <speech_logs> to ensure your description is globally unique.
 - Use the confidence value in the <self> tag to decide how bold to be: higher confidence supports sharper differentiators, lower confidence favors safer overlaps.
-- Choose 2-3 aspects such as category, purpose, setting, sensory detail, or user.
+- Choose 2-3 aspects such as category, purpose, setting, sensory detail or user.
 - Mirror the tone and vocabulary other players use.
-- Skip brands, numbers, and rare trivia unless essential.
+- Skip brands, numbers and rare trivia unless essential.
 Reply now with your single-line speech."""
 
 _SPY_SPEECH_PROMPT_PREFIX = """You are the spy in the party game "Who is the Spy". Your secret word is "{my_word}" and it is your turn to speak.
@@ -86,12 +85,13 @@ Must:
 - Output exactly one line of plain text; no labels, emojis, quotes, or meta reasoning.
 - Prioritize overlap with likely civilian clues; you may soften or generalize details to avoid exposing your unique angle.
 - Do not mention roles, probabilities, mechanics, questions, accusations, or player names.
-- Avoid repeating another player's description this round.
-- Stay concise: 18-35 characters for Chinese/Japanese/Korean, otherwise 20-40 words.
+- CRITICAL: Check ALL speeches in <speech_logs>. Your description must be semantically DIFFERENT from everything said before.
+- Stay concise: no more than 100 characters/words.
 Guide:
 - Follow the <strategy> tag in the <speech_context> tag and mirror the group's clarity while masking differences.
-- Review the <planning> tag generated via the `plan_speech` tool and align your clue with its goal.
-- If you sense conflict with the group, emphasize broad categories, shared settings, or emotions instead of specifics.
+- Review the <planning> tag and align your clue with its goal.
+- Review ALL speeches in <speech_logs> to ensure your description is globally unique.
+- If you sense conflict with the group, emphasize broad categories, shared settings or emotions instead of specifics.
 - Choose 2-3 aspects such as category, purpose, setting, sensory detail, or user that civilians might also mention.
 - Mirror the tone and vocabulary other players use.
 - Avoid brands, numbers, and rare trivia unless essential.
@@ -155,11 +155,13 @@ def format_speech_system_prompt(my_word: str, self_belief: SelfBelief) -> str:
 
 
 def format_inference_system_prompt(
-    my_word: str, player_count: int, spy_count: int
+    my_word: str, player_count: int,
+    alive_count: int, spy_count: int
 ) -> str:
     """Format the inference system prompt with game parameters."""
     return _INFERENCE_PROMPT_PREFIX.format(
-        my_word=my_word, player_count=player_count, spy_count=spy_count
+        my_word=my_word, player_count=player_count, 
+        alive_count=alive_count, spy_count=spy_count
     )
 
 

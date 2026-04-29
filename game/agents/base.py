@@ -28,6 +28,7 @@ class SpeechContext:
     current_round: int
     completed_speeches: Sequence[Speech]
     alive_players: List[str]
+    origin_players: List[str]
     self_belief: Dict[str, Any]  # Agent's belief about own role
     suspicions: Dict[str, Any]    # Agent's suspicions about others
     speech_plan: Optional[Dict[str, Any]] = None

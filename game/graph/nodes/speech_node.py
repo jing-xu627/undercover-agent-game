@@ -37,6 +37,7 @@ async def collect_speeches_phase(state: GameState) -> Dict[str, Any]:
             current_round=current_round,
             completed_speeches=state.get("completed_speeches", []),
             alive_players=alive_ids,
+            origin_players=state.get("players", []),
             self_belief=agent.mindset.get("self_belief", {}),
             suspicions=agent.mindset.get("suspicions", {}),
             undercover_num=state.get("undercover_num", 1),

@@ -16,8 +16,8 @@ from langchain.tools import tool
 from game.utils.logger import get_logger
 from game.common.schema import PlayerMindset
 from game.graph.state import GameState, alive_players
-from game.strategy.builders.prompt_builder import determine_clarity
-from game.strategy.serialization import normalize_mindset, to_plain_dict
+from game.utils.prompt_builder import determine_clarity
+from game.utils.serialization import normalize_mindset, to_plain_dict
 
 SelfBeliefDict = Dict[str, Any]
 SuspicionDict = Dict[str, Any]

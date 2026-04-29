@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 from game.common.schema import SelfBelief
-from game.strategy.serialization import to_plain_dict
+from game.utils.serialization import to_plain_dict
 
 
 def _belief_to_dict(belief: SelfBelief) -> Dict[str, Any]:

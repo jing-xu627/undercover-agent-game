@@ -5,7 +5,7 @@ This agent encapsulates the existing LLM-based strategy logic from the strategy 
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, cast, Sequence
 
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
@@ -13,19 +13,23 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from game.agents.base import AgentType, GameEvent, PlayerAgent, SpeechContext, VoteContext
 from game.common.schema import PlayerMindset, SelfBelief, Speech
-from game.strategy.builders.context_builder import build_inference_user_context
-from game.strategy.builders.prompt_builder import format_inference_system_prompt
-from game.strategy.llm_schemas import PlayerMindsetModel, SelfBeliefModel
-from game.strategy.strategy_core import (
-    llm_generate_speech,
-    llm_decide_vote,
-    plan_player_speech,
-    _invoke_async,
+from game.utils.prompt_builder import (
+    format_inference_system_prompt,
+    format_vote_system_prompt,
+    format_speech_system_prompt,
 )
-from game.strategy.utils.logging_utils import log_self_belief_update
+from game.common.llm_schemas import PlayerMindsetModel, VoteDecisionModel
+from game.utils.context_builder import (
+    build_speech_user_context,
+    build_inference_user_context,
+    build_vote_user_context,
+)
+from game.agents.tools.vote_tools import vote_tools
+from game.utils.logging_utils import log_self_belief_update
 from game.utils.logger import get_logger
-from game.graph.state import GameState
-from game.agent_tools.speech_tools import speech_planning_tools
+from game.graph.state import GameState, alive_players
+from game.core.speech_strategy import speech_planning_tools
+from game.utils.text_utils import sanitize_speech_output
 
 logger = get_logger(__name__)
 
@@ -50,6 +54,7 @@ class AIAgent(PlayerAgent):
         super().__init__(player_id, name)
         self._llm_client = llm_client
         self._personality = personality or "balanced"  # aggressive, cautious, deceptive, etc.
+        self._base_agent = create_agent(model=llm_client)
 
     @property
     def agent_type(self) -> AgentType:
@@ -79,15 +84,11 @@ class AIAgent(PlayerAgent):
             logger.warning("Speech planning failed for %s: %s", self._player_id, exc)
             speech_plan = None
 
+        logger.debug(f"Speech plan for {self._player_id}: {speech_plan}")
         # Step 3: Generate speech with LLM
         try:
-            speech_text = await llm_generate_speech(
-                llm_client=self._llm_client,
-                my_word=self._word or context.my_word,
-                self_belief=self._mindset.get("self_belief", {}),
-                suspicions=self._mindset.get("suspicions", {}),
+            speech_text = await self.generate_speech_content(
                 completed_speeches=context.completed_speeches,
-                me=self._player_id,
                 alive=context.alive_players,
                 current_round=context.current_round,
                 speech_plan=speech_plan,
@@ -99,6 +100,54 @@ class AIAgent(PlayerAgent):
             # Fallback: simple description
             return f"I think the word relates to {self._word or 'something familiar'}."
 
+    
+    async def generate_speech_content(
+        self,
+        completed_speeches: Sequence[Speech],
+        alive: List[str],
+        current_round: int,
+        speech_plan: Dict[str, Any] | None = None,
+    ) -> str:
+        """
+        Use LLM to generate a strategic speech based on current beliefs.
+
+        Args:
+            completed_speeches: History of all speeches
+            alive: Currently alive player IDs
+            current_round: Current game round number
+            speech_plan: Optional structured plan produced by plan_speech tool
+
+        Returns:
+            Generated speech as a single-line string
+        """
+        self_belief = self._mindset.get("self_belief", {})  
+                
+        system_prompt = format_speech_system_prompt(self._word, self_belief)
+        user_context = build_speech_user_context(
+            self_belief,
+            completed_speeches,
+            self._player_id,
+            alive,
+            current_round,
+            speech_plan=speech_plan,
+        )
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_context),
+        ]
+        result = await self._base_agent.ainvoke({"messages": messages})
+        # Extract content from result - could be AIMessage or dict with messages array
+        if hasattr(result, "content"):
+            res_raw_text = result.content
+        elif isinstance(result, dict) and "messages" in result:
+            last_message = result["messages"][-1]
+            res_raw_text = last_message.content if hasattr(last_message, "content") else str(last_message)
+        else:
+            res_raw_text = str(result)
+        return sanitize_speech_output(res_raw_text)
+
+
     async def vote(self, context: VoteContext) -> str:
         """
         Generate vote using LLM strategy.
@@ -109,24 +158,20 @@ class AIAgent(PlayerAgent):
 
         try:
             # Build minimal state for vote function
-            
             minimal_state: GameState = {
                 "game_id": "voting",
-                "players": context.alive_players + [context.player_id],
+                "players": context.alive_players,
                 "game_phase": "voting",
                 "current_round": context.current_round,
                 "completed_speeches": [],
                 "votes": [],
                 "eliminated": [],
                 "host_private_state": {},
-                "player_private_states": {context.player_id: self._mindset},
+                "player_private_states": {self._player_id: self._mindset},
             }
 
-            vote_target = await llm_decide_vote(
-                llm_client=self._llm_client,
+            vote_target = await self.llm_decide_vote(
                 state=minimal_state,
-                me=self._player_id,
-                my_word=self._word or context.self_belief.get("word", ""),
                 current_mindset=self._mindset,
             )
             logger.info("AIAgent %s votes for %s", self._player_id, vote_target)
@@ -134,10 +179,73 @@ class AIAgent(PlayerAgent):
         except Exception as exc:
             logger.error("Vote generation failed for %s: %s", self._player_id, exc)
             # Fallback: vote for first other player
-            for pid in context.alive_players:
-                if pid != self._player_id:
-                    return pid
-            return context.alive_players[0] if context.alive_players else self._player_id
+            other_alives = [pid for pid in context.alive_players if pid != self._player_id]
+            return random.choice(other_alives)
+
+    async def llm_decide_vote(
+        self,
+        state: GameState,
+        current_mindset: PlayerMindset,
+    ) -> str:
+        """
+        Use LLM with voting tools to decide which player to vote for.
+
+        Args:
+            state: Current shared game state
+            current_mindset: Player's latest mindset state
+
+        Returns:
+            Player ID selected as the vote target
+        """
+        # Pass the freshly inferred mindset so vote heuristics reflect the latest suspicions.
+        tools = vote_tools(
+            state,
+            self._player_id,
+            mindset_overrides={self._player_id: current_mindset},
+        )
+        response_format = ToolStrategy(
+            schema=VoteDecisionModel,
+            tool_message_content="Vote decision captured.",
+        )
+
+        my_word=self._word
+
+        alive_now = alive_players(state)
+        system_prompt = format_vote_system_prompt(
+            my_word=my_word,
+            alive_count=len(alive_now),
+            current_round=state.get("current_round", 0),
+        )
+        vote_context = build_vote_user_context(
+            alive=alive_now,
+            me=self._player_id,
+            current_mindset=current_mindset,
+            current_round=state.get("current_round", 0),
+        )
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=vote_context),
+        ]
+        try:
+            result = await self._base_agent.bind(tools=tools).ainvoke(
+                {"messages": messages},
+                response_format=response_format
+            )
+            structured = result.get("structured_response")
+            if structured:
+                if not isinstance(structured, VoteDecisionModel):
+                    structured = VoteDecisionModel.model_validate(structured)
+                return structured.target
+        except Exception as exc:
+            logger.exception("LLM vote decision failed: %s", exc)
+
+        # Fallback: choose the first other alive player or self if alone
+        alternatives = [pid for pid in alive_now if pid != self._player_id]
+        if alternatives:
+            return random.choice(alternatives)
+        return self._player_id
+
 
     async def observe(self, event: GameEvent) -> None:
         """
@@ -164,92 +272,69 @@ class AIAgent(PlayerAgent):
             if eliminated_player:
                 logger.info("AIAgent %s noted elimination of %s", self._player_id, eliminated_player)
 
-    def _to_mindset_model(
-        self,
+
+    def _mindset_model_to_dict(self,
         mindset: PlayerMindset | PlayerMindsetModel | None,
-    ) -> PlayerMindsetModel:
-        """Convert shared-state mindset data into a Pydantic model."""
-        if isinstance(mindset, PlayerMindsetModel):
-            return mindset
-
+    ) -> PlayerMindset:
+        default_self_belief = {"role": "civilian", "confidence": 0.5}
         if mindset is None:
-            return PlayerMindsetModel(
-                self_belief=SelfBeliefModel(role="civilian", confidence=0.5),
-                suspicions={},
-            )
-
-        if hasattr(mindset, "model_dump"):
-            return PlayerMindsetModel(**mindset.model_dump())
-
-        return PlayerMindsetModel(**cast(Dict[str, Any], mindset))
-
-    def _mindset_model_to_state(self, model: PlayerMindsetModel) -> PlayerMindset:
-        """Convert a Pydantic mindset model into the plain dict state form."""
-        return cast(PlayerMindset, model.model_dump())
+            return {
+                "suspicions":{},
+                "self_belief": default_self_belief,
+            }
+        
+        if isinstance(mindset, PlayerMindsetModel):
+            return cast(PlayerMindset, mindset.model_dump())
+        
+        # Ensure required fields exist with defaults
+        if "self_belief" not in mindset or not mindset["self_belief"]:
+            mindset["self_belief"] = default_self_belief
+        if "suspicions" not in mindset:
+            mindset["suspicions"] = {}
+        return mindset
 
 
     async def _update_mindset(self, context: SpeechContext) -> None:
         """Internal: Update agent's mindset using LLM inference."""
         try:
-            existing_model = self._to_mindset_model(self._mindset)
-            existing_state = self._mindset_model_to_state(existing_model)
-            existing_self_belief = existing_state.get(
+            existing_mindset = self._mindset_model_to_dict(self._mindset)
+            existing_self_belief = existing_mindset.get(
                 "self_belief", {"role": "civilian", "confidence": 0.5}
             )
-
-            players = context.alive_players + [self._player_id]
-            alive = context.alive_players
 
             # 1. Format the system prompt (instructions)
             system_prompt = format_inference_system_prompt(
                 my_word=self._word or context.my_word,
-                player_count=len(players),
+                player_count=len(context.origin_players),
+                alive_count=len(context.alive_players),
                 spy_count=context.undercover_num,
             )
 
             # 2. Build the user context (structured, dynamic state)
             user_context = build_inference_user_context(
-                context.completed_speeches, players, alive, self._player_id, existing_state
+                context.completed_speeches, context.origin_players, 
+                context.alive_players, self._player_id, existing_mindset
             )
 
             # 3. Create agent with ToolStrategy for structured output
-            response_format = ToolStrategy(
-                schema=PlayerMindsetModel,
-                tool_message_content="Player mindset captured.",
-            )
-
-            agent = create_agent(
-                model=self._llm_client,
-                tools=[],
-                response_format=response_format,
-            )
+            #response_format = ToolStrategy(schema=PlayerMindsetModel)
 
             # 4. Invoke agent
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_context),
             ]
-            result = await _invoke_async(agent, {"messages": messages})
+            structured_llm = self._llm_client.with_structured_output(PlayerMindsetModel)
+            result = await structured_llm.ainvoke(messages)
 
-            # 5. Extract structured response
-            structured = result.get("structured_response")
-
-            if structured:
-                if not isinstance(structured, PlayerMindsetModel):
-                    structured = PlayerMindsetModel.model_validate(structured)
-                new_state = self._mindset_model_to_state(structured)
-                log_self_belief_update(
-                    self._player_id,
-                    existing_self_belief,
-                    new_state.get("self_belief", {"role": "civilian", "confidence": 0.5}),
-                )
-                self._mindset = new_state
-                logger.debug("AIAgent %s mindset updated", self._player_id)
-            else:
-                # No structured response, preserve existing
-                log_self_belief_update(
-                    self._player_id, existing_self_belief, existing_self_belief
-                )
+            new_mindset = self._mindset_model_to_dict(result)
+            log_self_belief_update(
+                self._player_id,
+                existing_self_belief,
+                new_mindset.get("self_belief", {"role": "civilian", "confidence": 0.5}),
+            )
+            self._mindset = new_mindset
+            logger.debug("AIAgent %s mindset updated", self._player_id)
 
         except Exception as exc:
             logger.warning("Mindset update failed for %s: %s", self._player_id, exc)

@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import './App.css';
 import LangGraphClient from './LangGraphClient';
 import WebSocketClient from './WebSocketClient';
-import RoleReveal from './components/RoleReveal';
 import SpeechInput from './components/SpeechInput';
 import VoteSelector from './components/VoteSelector';
 import { useTranslation } from 'react-i18next';
@@ -17,22 +16,19 @@ function App() {
     current_votes: {},
     winner: null,
     eliminated_players: [],
-    player_private_states: {},
-    host_private_state: {},
     current_round: 1
   });
   const [isGameRunning, setIsGameRunning] = useState(false);
   const [numPlayers, setNumPlayers] = useState(6);
   const [playerCountError, setPlayerCountError] = useState('');
 
-  const [expandedSuspicionReasons, setExpandedSuspicionReasons] = useState({});
   const langGraphClient = useRef(null);
   const conversationContainerRef = useRef(null);
 
   // Human player state
   const [wsClient] = useState(() => new WebSocketClient());
   const [humanPlayerId, setHumanPlayerId] = useState(null);
-  const [humanGamePhase, setHumanGamePhase] = useState('waiting'); // waiting, role_reveal, speaking, voting, game_over
+  const [humanGamePhase, setHumanGamePhase] = useState('waiting'); // waiting, speaking, voting, game_over
   const [humanMyWord, setHumanMyWord] = useState(null);
   const [humanIsSpy, setHumanIsSpy] = useState(false);
   const [humanCurrentRound, setHumanCurrentRound] = useState(1);
@@ -41,13 +37,6 @@ function App() {
   const [actionSubmitted, setActionSubmitted] = useState(false);
   const [gameId, setGameId] = useState(null);
   const [finalResult, setFinalResult] = useState(null);
-
-  const toggleSuspicionReason = (suspicionId) => {
-    setExpandedSuspicionReasons(prev => ({
-      ...prev,
-      [suspicionId]: !prev[suspicionId]
-    }));
-  };
 
   useEffect(() => {
     langGraphClient.current = new LangGraphClient();
@@ -66,13 +55,6 @@ function App() {
 
   // WebSocket event handlers for human player
   useEffect(() => {
-    const handleRoleReveal = (data) => {
-      console.log('WebSocket: role_reveal', data);
-      setHumanMyWord(data.word);
-      setHumanIsSpy(data.is_spy);
-      setHumanGamePhase('role_reveal');
-    };
-
     const handlePromptSpeak = (data) => {
       console.log('WebSocket: prompt_speak', data);
       setSpeechPrompt(data);
@@ -114,13 +96,11 @@ function App() {
       }
     };
 
-    wsClient.on('role_reveal', handleRoleReveal);
     wsClient.on('prompt_speak', handlePromptSpeak);
     wsClient.on('prompt_vote', handlePromptVote);
     wsClient.on('game_event', handleGameEvent);
 
     return () => {
-      wsClient.off('role_reveal', handleRoleReveal);
       wsClient.off('prompt_speak', handlePromptSpeak);
       wsClient.off('prompt_vote', handlePromptVote);
       wsClient.off('game_event', handleGameEvent);
@@ -144,10 +124,6 @@ function App() {
     setActionSubmitted(true);
   }, [wsClient]);
 
-  const handleRoleConfirm = useCallback(() => {
-    setHumanGamePhase('waiting');
-  }, []);
-
   const startGame = async () => {
     console.log('=== startGame called ===');
     // alert('startGame called! Check console.');
@@ -155,7 +131,7 @@ function App() {
       setIsGameRunning(true);
 
       // Auto-create human player
-      const generatedPlayerId = `Player_${Date.now()}`;
+      const generatedPlayerId = `Player_${Date.now().toString().slice(-5)}`;
       const playerCount = numPlayers;
       const apiUrl = 'http://localhost:8124';
       console.log('Creating game with player:', generatedPlayerId);
@@ -207,7 +183,7 @@ function App() {
       const pollGameState = async () => {
         console.log('Starting game state polling...');
         let attempts = 0;
-        const maxAttempts = 600; // 5 minutes
+        const maxAttempts = 9000; 
 
         while (attempts < maxAttempts) {
           attempts++;
@@ -227,9 +203,7 @@ function App() {
                 current_votes: gameInfo.current_votes || {},
                 winner: gameData.winner,
                 eliminated_players: gameInfo.eliminated_players || [],
-                your_word: gameInfo.your_word,
-                player_private_states: {},
-                host_private_state: {}
+                your_word: gameInfo.your_word
               };
               setGameState(prev => ({ ...prev, ...uiState }));
 
@@ -267,8 +241,6 @@ function App() {
         current_votes: {},
         winner: null,
         eliminated_players: [],
-        player_private_states: {},
-        host_private_state: {},
         current_round: 1
       });
     }
@@ -284,8 +256,6 @@ function App() {
         current_votes: {},
         winner: null,
         eliminated_players: [],
-        player_private_states: {},
-        host_private_state: {},
         current_round: 1
       });
 
@@ -332,17 +302,9 @@ function App() {
   // Render human player UI based on phase
   const renderHumanPlayerUI = () => {
     if (!humanPlayerId) return null;
+    if (gameState.eliminated_players?.includes(humanPlayerId)) return null;
 
     switch (humanGamePhase) {
-      case 'role_reveal':
-        return ( 
-          <RoleReveal
-            word={humanMyWord}
-            isSpy={humanIsSpy}
-            round={humanCurrentRound}
-            onConfirm={handleRoleConfirm}
-          />
-        );
       case 'speaking':
         return (
           <SpeechInput
@@ -426,134 +388,137 @@ function App() {
           </div>
         )}
 
-        <div className="game-layout" style={{ display: isGameRunning ? 'flex' : 'none' }}>
-          <div className="players-panel">
-            <h3>{t('players_list_title')}</h3>
-            <div className="players-list">
-              {getOrderedPlayers().map((playerId, index) => {
-                const isEliminated = gameState.eliminated_players.includes(playerId);
-                const assignedWord = playerId === humanPlayerId ? gameState.your_word :  t('role_unknown');
-                const isHumanPlayer = playerId === humanPlayerId;
+      </header>
 
-                return (
-                  <div
-                    key={playerId}
-                    className={`player-item ${isEliminated ? 'eliminated' : ''} ${isHumanPlayer ? 'human-player' : ''}`}
-                  >
-                    <div className="player-avatar">
-                      {isHumanPlayer ? '🎮' :
-                       isEliminated ? '💀' : '👤'}
-                    </div>
-                    <div className="player-details">
-                      <div className="player-name">
-                        {playerId}
-                        {isHumanPlayer && <span className="you-badge">{'你'}</span>}
-                      </div>
-                      {isHumanPlayer && (
-                        <div className="player-word">
-                          <strong>{t('word_label')}</strong> {assignedWord}
-                        </div>
-                      )}
-                      <div className="player-status">
-                        {isEliminated ? t('status_eliminated') : t('status_in_game')}
-                      </div>
-                    </div>
+      {/* Game layout outside header to use full page width */}
+      <div className="game-layout" style={{ display: isGameRunning ? 'grid' : 'none' }}>
+        <div className="players-panel">
+          <h3>{t('players_list_title')}</h3>
+          <div className="players-list">
+            {getOrderedPlayers().map((playerId, index) => {
+              const isEliminated = gameState.eliminated_players.includes(playerId);
+              const assignedWord = playerId === humanPlayerId ? gameState.your_word :  t('role_unknown');
+              const isHumanPlayer = playerId === humanPlayerId;
+
+              return (
+                <div
+                  key={playerId}
+                  className={`player-item ${isEliminated ? 'eliminated' : ''} ${isHumanPlayer ? 'human-player' : ''}`}
+                >
+                  <div className="player-avatar">
+                    {isHumanPlayer ? '🎮' :
+                     isEliminated ? '💀' : '👤'}
                   </div>
-                );
-              })}
-            </div>
-
-          </div>
-
-          <div className="conversation-panel">
-            <h3>{t('conversation_history_title')}</h3>
-
-            {/* Human player UI overlay (role reveal, speech input, voting, game over) */}
-            {humanPlayerId && renderHumanPlayerUI()}
-
-            {/* Game End Info Banner */}
-            {gameState.status === 'result' && finalResult && (
-              <div className="game-end-banner">
-                <div className={`winner-announcement ${finalResult.winner === 'spies' ? '卧底胜利' : '平民胜利'}`}>
-                  {finalResult.winner === 'spies' ? '卧底胜利!': '平民胜利!'}
-                </div>
-                {finalResult.spies && finalResult.spies.length > 0 && (
-                  <div className="spy-reveal-info">
-                    <span className="spy-reveal-label">卧底是:</span>
-                    {finalResult.spies.map((playerName) => (
-                      <strong key={playerName} className="spy-reveal-name">
-                        {playerName}
-                      </strong>
-                    ))}
-                  </div>
-                )}
-                {finalResult.civilian_word && finalResult.spy_word && (
-                  <div className="words-reveal-info">
-                    <div className="word-reveal-row">
-                      <span className="word-reveal-label">{'平民词'}:</span>
-                      <strong className="word-reveal-value civilian">{finalResult.civilian_word}</strong>
+                  <div className="player-details">
+                    <div className="player-name">
+                      {playerId}
+                      {isHumanPlayer && <span className="you-badge">{'你'}</span>}
                     </div>
-                    <div className="word-reveal-row">
-                      <span className="word-reveal-label">{'卧底词'}:</span>
-                      <strong className="word-reveal-value spy">{finalResult.spy_word}</strong>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Chat History - Always visible */}
-            <div className="conversation-container" ref={conversationContainerRef}>
-              {(() => {
-                // Group speeches by round
-                const speechesByRound = {};
-                gameState.completed_speeches?.forEach(speech => {
-                  const round = speech.round || 1;
-                  if (!speechesByRound[round]) speechesByRound[round] = [];
-                  speechesByRound[round].push(speech);
-                });
-
-                const rounds = Object.keys(speechesByRound).sort((a, b) => a - b);
-
-                return rounds.map(round => (
-                  <div key={round} className="round-section">
-                    <div className="round-header">第 {round} 轮</div>
-                    {speechesByRound[round].map((speech, idx) => (
-                      <div key={idx} className="speech-entry">
-                        <div className="speech-header">
-                          <span className="speaker-name">{speech.player_id || speech.player}</span>
-                          <span className="round-badge">{t('round')} {speech.round}</span>
-                        </div>
-                        <div className="speech-content">{speech.content}</div>
-                      </div>
-                    ))}
-                    {/* Show votes after each round's speeches */}
-                    {gameState.current_votes && Object.keys(gameState.current_votes).length > 0 && (
-                      <div className="votes-panel">
-                        <div className="votes-title">第 {round} 轮投票</div>
-                        <div className="votes-list">
-                          {Object.entries(gameState.current_votes).map(([voter, vote]) => (
-                            <div key={voter} className="vote-item">
-                              <span className="vote-voter">{voter}</span>
-                              <span className="vote-arrow">→</span>
-                              <span className="vote-target">{vote.target}</span>
-                            </div>
-                          ))}
-                        </div>
+                    {isHumanPlayer && (
+                      <div className="player-word">
+                        <strong>{t('word_label')}</strong> {assignedWord}
                       </div>
                     )}
+                    <div className="player-status">
+                      {isEliminated ? t('status_eliminated') : t('status_in_game')}
+                    </div>
                   </div>
-                ));
-              })()}
-              {(!gameState.completed_speeches || gameState.completed_speeches.length === 0) && (
-                <p className="empty-chat-message">{'等待游戏开始...'}</p>
-              )}
-            </div>
+                </div>
+              );
+            })}
           </div>
 
         </div>
 
-      </header>
+        <div className="conversation-panel">
+          <h3>{t('conversation_history_title')}</h3>
+
+          {/* Chat History - Always visible */}
+          <div className="conversation-container" ref={conversationContainerRef}>
+            {(() => {
+              // Group speeches by round
+              const speechesByRound = {};
+              gameState.completed_speeches?.forEach(speech => {
+                const round = speech.round || 1;
+                if (!speechesByRound[round]) speechesByRound[round] = [];
+                speechesByRound[round].push(speech);
+              });
+
+              const rounds = Object.keys(speechesByRound).sort((a, b) => a - b);
+
+              return rounds.map(round => (
+                <div key={round} className="round-section">
+                  <div className="round-header">第 {round} 轮</div>
+                  {speechesByRound[round].map((speech, idx) => (
+                    <div key={idx} className="speech-entry">
+                      <div className="speech-header">
+                        <span className="speaker-name">{speech.player_id || speech.player}</span>
+                      </div>
+                      <div className="speech-content">{speech.content}</div>
+                    </div>
+                  ))}
+                  
+                </div>
+              ));
+            })()}
+            {(!gameState.completed_speeches || gameState.completed_speeches.length === 0) && (
+              <p className="empty-chat-message">{'等待发言...'}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="human-interaction-panel">
+          {/* Human player UI (role reveal, speech input, voting, game over) */}
+          {humanPlayerId && renderHumanPlayerUI()}
+
+          {/* Show votes after each round's speeches */}
+          {gameState.current_votes && Object.keys(gameState.current_votes).length > 0 && (
+            <div className="votes-panel">
+              <div className="votes-title">{t('voting_results_title')}</div>
+              <div className="votes-list">
+                {Object.entries(gameState.current_votes).map(([voter, vote]) => (
+                  <div key={voter} className="vote-item">
+                    <span className="vote-voter">{voter}</span>
+                    <span className="vote-arrow">{t('vote_target_label')}</span>
+                    <span className="vote-target">{vote.target}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Game End Info Banner */}
+          {gameState.status === 'result' && finalResult && (
+            <div className="game-end-banner">
+              <div className={`winner-announcement ${finalResult.winner === 'spies' ? '卧底胜利' : '平民胜利'}`}>
+                {finalResult.winner === 'spies' ? t('spy_wins'): t('civilians_win')}
+              </div>
+              {finalResult.spies && finalResult.spies.length > 0 && (
+                <div className="spy-reveal-info">
+                  <span className="spy-reveal-label">卧底是:</span>
+                  {finalResult.spies.map((playerName) => (
+                    <strong key={playerName} className="spy-reveal-name">
+                      {playerName}
+                    </strong>
+                  ))}
+                </div>
+              )}
+              {finalResult.civilian_word && finalResult.spy_word && (
+                <div className="words-reveal-info">
+                  <div className="word-reveal-row">
+                    <span className="word-reveal-label">{'平民词'}:</span>
+                    <strong className="word-reveal-value civilian">{finalResult.civilian_word}</strong>
+                  </div>
+                  <div className="word-reveal-row">
+                    <span className="word-reveal-label">{'卧底词'}:</span>
+                    <strong className="word-reveal-value spy">{finalResult.spy_word}</strong>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

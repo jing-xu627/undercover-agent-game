@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import WebSocketClient from '../WebSocketClient';
 import HumanPlayerLobby from './HumanPlayerLobby';
-import RoleReveal from './RoleReveal';
 import SpeechInput from './SpeechInput';
 import VoteSelector from './VoteSelector';
 import GameEvents from './GameEvents';
@@ -22,7 +21,7 @@ function HumanPlayerView() {
 
   // Game state
   const [playerId, setPlayerId] = useState(null);
-  const [gamePhase, setGamePhase] = useState('lobby'); // lobby, role_reveal, waiting, speaking, voting, game_over
+  const [gamePhase, setGamePhase] = useState('lobby'); // lobby, waiting, speaking, voting, game_over
   const [myWord, setMyWord] = useState(null);
   const [isSpy, setIsSpy] = useState(false);
   const [currentRound, setCurrentRound] = useState(1);
@@ -40,13 +39,7 @@ function HumanPlayerView() {
     const handleConnected = (data) => {
       setConnectionStatus('connected');
       setConnectionError(null);
-      // Don't set phase to waiting yet - wait for role_reveal
-    };
-
-    const handleRoleReveal = (data) => {
-      setMyWord(data.word);
-      setIsSpy(data.is_spy);
-      setGamePhase('role_reveal');
+      // Don't set phase to waiting yet
     };
 
     const handleDisconnected = () => {
@@ -100,7 +93,6 @@ function HumanPlayerView() {
     };
 
     wsClient.on('connected', handleConnected);
-    wsClient.on('role_reveal', handleRoleReveal);
     wsClient.on('disconnected', handleDisconnected);
     wsClient.on('prompt_speak', handlePromptSpeak);
     wsClient.on('prompt_vote', handlePromptVote);
@@ -109,7 +101,6 @@ function HumanPlayerView() {
 
     return () => {
       wsClient.off('connected', handleConnected);
-      wsClient.off('role_reveal', handleRoleReveal);
       wsClient.off('disconnected', handleDisconnected);
       wsClient.off('prompt_speak', handlePromptSpeak);
       wsClient.off('prompt_vote', handlePromptVote);
@@ -199,16 +190,6 @@ function HumanPlayerView() {
             onCreateGame={handleCreateGame}
             connectionStatus={connectionStatus}
             error={connectionError}
-          />
-        );
-
-      case 'role_reveal':
-        return (
-          <RoleReveal
-            word={myWord}
-            isSpy={isSpy}
-            round={currentRound}
-            onConfirm={handleRoleConfirm}
           />
         );
 

@@ -24,6 +24,7 @@ from game.utils.logger import get_logger
 from game.graph.nodes.master_node import host_setup, host_judge, game_over
 from game.graph.nodes.vote_node import collect_voting_phase
 from game.graph.nodes.speech_node import collect_speeches_phase
+from game.graph.nodes.delay_node import display_delay
 from game.graph.state import GameState
 
 logger = get_logger(__name__)
@@ -56,6 +57,7 @@ def build_agent_workflow(checkpointer=None):
     workflow.add_node("host_setup", host_setup)
     workflow.add_node("agents_speaking", collect_speeches_phase)
     workflow.add_node("agents_voting", collect_voting_phase)
+    workflow.add_node("vote_display_delay", display_delay)
     workflow.add_node("host_judge", host_judge)
     workflow.add_node("game_over", game_over)
 
@@ -63,7 +65,8 @@ def build_agent_workflow(checkpointer=None):
     workflow.set_entry_point("host_setup")
     workflow.add_edge("host_setup", "agents_speaking")
     workflow.add_edge("agents_speaking", "agents_voting")
-    workflow.add_edge("agents_voting", "host_judge")
+    workflow.add_edge("agents_voting", "vote_display_delay")
+    workflow.add_edge("vote_display_delay", "host_judge")
 
     # Game end check
     workflow.add_conditional_edges(

@@ -92,28 +92,33 @@
   cursor: not-allowed;
 }
 
-/* Layout: responsive three columns with improved spacing */
+/* Layout: three columns layout */
 .game-layout {
   display: grid;
-  grid-template-columns: 280px minmax(400px, 1fr) 340px;
-  gap: 20px;
-  align-items: start;
+  grid-template-columns: 240px minmax(400px, 1fr) 300px;
+  gap: 16px;
+  align-items: stretch;
   margin-top: 16px;
   min-height: 600px;
+  height: calc(100vh - 140px);
 }
 
 /* Panels with improved visual hierarchy */
 .players-panel,
 .conversation-panel,
-.suspicion-matrix-panel {
+.human-interaction-panel {
   background: #ffffff;
   border-radius: 12px;
-  padding: 18px;
+  padding: 16px;
   box-shadow: 0 4px 20px rgba(12, 24, 40, 0.08);
   display: flex;
   flex-direction: column;
   min-height: 400px;
   border: 1px solid #f0f4f8;
+}
+
+.human-interaction-panel {
+  min-width: 240px;
 }
 
 .conversation-panel {
@@ -122,9 +127,9 @@
 
 .players-panel h3,
 .conversation-panel h3,
-.suspicion-matrix-panel h3 {
-  margin: 0 0 16px 0;
-  font-size: 1.15rem;
+.human-interaction-panel h3 {
+  margin: 0 0 12px 0;
+  font-size: 1.1rem;
   color: #1a365d;
   font-weight: 700;
   border-bottom: 2px solid #e2e8f0;
@@ -157,8 +162,8 @@
 }
 
 .player-avatar {
-  width: 48px;
-  height: 48px;
+  width: 45px;
+  height: 45px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -180,13 +185,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 1.05rem;
+  font-size: 0.9rem;
   margin-bottom: 4px;
 }
 
 .player-word {
   color: #4a5568;
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   margin-bottom: 6px;
   font-weight: 500;
 }
@@ -206,17 +211,17 @@
 .conversation-container {
   overflow: auto;
   padding: 8px;
-  max-height: 65vh;
   flex: 1;
+  min-height: 0;
 }
 
 .speech-entry {
-  padding: 16px;
-  margin-bottom: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
   background: #ffffff;
-  border-radius: 12px;
-  border-left: 4px solid #38a169;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  border-left: 3px solid #38a169;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
   transition: all 0.2s ease;
 }
 
@@ -227,23 +232,22 @@
 
 .speech-header {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
   flex-wrap: wrap;
 }
 
 .speaker-name {
   font-weight: 700;
   color: #2d3748;
-  font-size: 1.05rem;
+  font-size: 0.9rem;
 }
 
 .speech-content {
   color: #2d3748;
-  line-height: 1.6;
-  font-size: 1rem;
-  margin-bottom: 8px;
+  line-height: 1.4;
+  font-size: 0.95rem;
 }
 
 .reasoning-section {
@@ -258,7 +262,7 @@
 /* Voting grid - old style, kept for reference */
 .votes-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   gap: 8px;
   margin-top: 8px;
 }
@@ -272,19 +276,19 @@
   align-items: center;
 }
 
-/* Responsive adjustments for improved layout */
+/* Responsive adjustments for three-column layout */
 @media (max-width: 1200px) {
   .game-layout {
-    grid-template-columns: 260px minmax(350px, 1fr) 300px;
-    gap: 16px;
+    grid-template-columns: 220px minmax(350px, 1fr) 260px;
+    gap: 12px;
   }
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 900px) {
   .game-layout {
-    grid-template-columns: 240px minmax(350px, 1fr);
+    grid-template-columns: 200px 1fr;
   }
-  .suspicion-matrix-panel {
+  .human-interaction-panel {
     display: none;
   }
 }
@@ -306,7 +310,7 @@
     grid-template-columns: 1fr;
     gap: 16px;
   }
-  .suspicion-matrix-panel {
+  .human-interaction-panel {
     display: block;
     order: 3;
   }
@@ -450,7 +454,7 @@
 }
 
 /* Tiny fade-in for content */
-.players-panel, .conversation-panel, .suspicion-matrix-panel {
+.players-panel, .conversation-panel, .human-interaction-panel {
   opacity: 0.0;
   transform: translateY(6px);
   animation: panelEntrance 320ms ease forwards;
@@ -527,7 +531,7 @@
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -563,7 +567,7 @@
   padding: 12px;
   border-radius: 8px;
   margin-bottom: 20px;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .lobby-info {
@@ -581,16 +585,8 @@
   margin: 0;
   padding-left: 20px;
   color: #718096;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.8;
-}
-
-/* Role Reveal */
-.role-reveal {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
 }
 
 .role-card {
@@ -773,6 +769,7 @@
   font-size: 16px;
   resize: vertical;
   transition: border-color 0.2s;
+  box-sizing: border-box;
 }
 
 .input-group textarea:focus {
@@ -807,42 +804,44 @@
 
 /* Vote Selector */
 .vote-selector {
-  max-width: 600px;
+  max-width: 480px;
   margin: 0 auto;
 }
 
 .vote-card {
   background: white;
-  padding: 20px;
-  border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  padding: 12px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
 }
 
 .vote-card h3 {
-  margin: 0 0 20px 0;
+  margin: 0 0 12px 0;
   color: #2d3748;
+  font-size: 0.9rem;
 }
 
 .vote-instruction {
   color: #4a5568;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
 }
 
 .player-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
 .player-vote-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 15px 20px;
+  padding: 8px 12px;
   background: #f7fafc;
   border: 2px solid transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -867,24 +866,6 @@
   color: #2d3748;
 }
 
-.suspicion-indicator {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.suspicion-bar {
-  height: 8px;
-  width: 100px;
-  border-radius: 4px;
-  background: #e2e8f0;
-}
-
-.suspicion-level {
-  font-size: 12px;
-  color: #718096;
-}
-
 .selected-indicator {
   color: #38a169;
   font-size: 20px;
@@ -893,10 +874,10 @@
 
 .vote-confirmation {
   text-align: center;
-  padding: 20px;
+  padding: 12px;
   background: #f0fff4;
   border-radius: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .vote-confirmation p {
@@ -905,7 +886,7 @@
 }
 
 .vote-tips {
-  padding: 15px;
+  padding: 10px;
   background: #fffaf0;
   border-radius: 8px;
   border-left: 3px solid #ed8936;
@@ -914,7 +895,7 @@
 .vote-tips p {
   margin: 0 0 5px 0;
   color: #744210;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 /* Game End Banner in Conversation Panel */
@@ -940,7 +921,6 @@
   padding: 10px 16px;
   border-radius: 8px;
   margin-bottom: 12px;
-  border-left: 4px solid #fc8181;
 }
 
 .spy-reveal-label {

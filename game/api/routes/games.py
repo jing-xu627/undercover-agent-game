@@ -13,7 +13,7 @@ from game.graph.build_graph import build_agent_workflow
 from langgraph.checkpoint.memory import MemorySaver
 from game.common.config import load_config, calculate_spy_count
 from game.utils.logger import get_logger
-from game.agents.host_agent import create_agents_from_config
+from game.core.agent_factory import create_agents_from_config
 from game.common.constant import PlayerRole
 
 
@@ -40,6 +40,8 @@ async def create_game(request: CreateGameRequest):
     Returns:
         Game ID and player assignments
     """
+    if request.human_player_ids and len(request.human_player_ids) > 1:
+        raise HTTPException(status_code=400, detail="Only one human player is allowed")
     if request.player_count < 3:
         raise HTTPException(status_code=400, detail="Player count must be at least 3")
     cfg = load_config()
@@ -127,7 +129,8 @@ async def get_game(game_id: str):
         your_word = None
         if human_player_id and "player_private_states" in state:
             player_private_states = state["player_private_states"]
-            your_word = player_private_states[human_player_id].get("assigned_word")
+            if human_player_id in player_private_states:
+                your_word = player_private_states[human_player_id].get("assigned_word", None)
 
         game_info = {
             "current_round": state.get("current_round", 0),

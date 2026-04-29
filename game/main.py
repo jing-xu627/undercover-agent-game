@@ -19,10 +19,6 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     logger.info("Starting server...")
     
-    # Load dependencies
-    #deps = build_dependencies()
-    #logger.info("Dependencies loaded. Config: %s players", deps.config.player_count)
-    
     yield
     
     # Shutdown

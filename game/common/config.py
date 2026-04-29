@@ -1,87 +1,21 @@
 """
 Configuration management for the game.
 
-This module centralizes how configuration is loaded, validated, and exposed to
-the rest of the codebase. It now layers a user-provided ``config.yaml`` on top
-of built-in defaults and validates the merged result with Pydantic models so
-configuration errors surface with clear messages at startup.
-
-Configuration precedence:
-1. Built-in defaults defined in ``DEFAULT_CONFIG``.
-2. Values provided in ``config.yaml`` (or a custom path passed to ``load_config``),
-   merged over the defaults.
-3. Pydantic model defaults for any fields still unset after the merge.
 """
 
 from __future__ import annotations
 
-from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, model_validator
-
 from game.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 class ConfigurationError(RuntimeError):
     """Raised when configuration cannot be loaded or validated."""
-
-
-DEFAULT_CONFIG: Dict[str, Any] = {
-    "game": {
-        "player_count": 4,
-        "vocabulary": [
-            ["苹果", "香蕉"],
-            ["太阳", "月亮"],
-            ["猫", "狗"],
-            ["咖啡", "茶"],
-            ["笔记本电脑", "书"],
-        ],
-        "player_names": [
-            "Alice",
-            "Bob",
-            "Charlie",
-            "David",
-            "Eve",
-            "Frank",
-            "Grace",
-            "Henry",
-            "Ivy",
-            "Jack",
-            "Katherine",
-            "Leo",
-            "Mia",
-            "Noah",
-            "Olivia",
-            "Peter",
-            "Quinn",
-            "Rachel",
-            "Sam",
-            "Tina",
-        ],
-        "settings": {"min_players": 3, "max_players": 8, "max_rounds": 5},
-    },
-    "metrics": {"enabled": False},
-}
-
-
-def _deep_merge(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursively merge two dictionaries without mutating the inputs."""
-    result: Dict[str, Any] = {}
-    for key in base.keys() | overrides.keys():
-        base_value = base.get(key)
-        override_value = overrides.get(key)
-
-        if isinstance(base_value, dict) and isinstance(override_value, dict):
-            result[key] = _deep_merge(base_value, override_value)
-        elif override_value is not None:
-            result[key] = override_value
-        else:
-            result[key] = deepcopy(base_value)
-    return result
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
@@ -103,11 +37,10 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 
 
 class GameSettingsModel(BaseModel):
-    """Pydantic model for the game.settings section."""
 
     min_players: int = Field(default=3, ge=1)
-    max_players: int = Field(default=8, ge=1)
-    max_rounds: int = Field(default=5, ge=1)
+    max_players: int = Field(default=10, ge=1)
+    max_rounds: int = Field(default=8, ge=1)
 
     @model_validator(mode="after")
     def validate_limits(self) -> "GameSettingsModel":
@@ -117,9 +50,8 @@ class GameSettingsModel(BaseModel):
 
 
 class GameModel(BaseModel):
-    """Pydantic model for the game section."""
 
-    player_count: int = Field(default=4, ge=1)
+    player_count: int = Field(default=6, ge=4, le=10)
     vocabulary: List[Tuple[str, str]] = Field(default_factory=list)
     player_names: List[str] = Field(default_factory=list)
     settings: GameSettingsModel = Field(default_factory=GameSettingsModel)
@@ -182,15 +114,11 @@ class GameConfig:
 
     def _load_config(self) -> ProjectConfigModel:
         """Load configuration from file, merge with defaults, and validate."""
-        user_config: Dict[str, Any] = {}
 
-        if self.config_path and self.config_path.exists():
-            user_config = _load_yaml(self.config_path)
-
-        merged = _deep_merge(deepcopy(DEFAULT_CONFIG), user_config)
+        user_config = _load_yaml(self.config_path)
 
         try:
-            return ProjectConfigModel.model_validate(merged)
+            return ProjectConfigModel.model_validate(user_config)
         except ValidationError as exc:
             detail = exc.errors()
             location = self.config_path or "built-in defaults"
@@ -248,19 +176,6 @@ class GameConfig:
 
         return available_names[:count]
 
-    def validate_config(self) -> bool:
-        """Validate the configuration."""
-        try:
-            _ = self.player_count
-            _ = self.vocabulary
-            names = self.generate_player_names()
-            if len(names) != self.player_count:
-                raise ValueError("Name generation failed")
-            return True
-        except Exception as exc:
-            logger.error("Configuration validation failed: %s", exc)
-            return False
-
 
 def default_config_path() -> Path:
     """Return the default config file location inside the repository."""
@@ -272,8 +187,7 @@ def load_config(config_path: str | Path | None = None) -> GameConfig:
     Build a new GameConfig instance from the provided path.
 
     Args:
-        config_path: Optional override path. When omitted, uses ``config.yaml`` at
-            the project root.
+        config_path: default use ``config.yaml`` at the project root.
     """
     resolved_path = (
         Path(config_path).expanduser() if config_path else default_config_path()
@@ -281,17 +195,9 @@ def load_config(config_path: str | Path | None = None) -> GameConfig:
     return GameConfig(resolved_path)
 
 
-def reload_config(config_path: str | Path | None = None) -> GameConfig:
-    """
-    Compatibility shim for legacy callers. Returns a freshly loaded config.
-    """
-    return load_config(config_path)
-
-
 def calculate_spy_count(total_players: int) -> int:
     """
     Calculate the number of spies based on total players.
-    Following common spy game balancing principles.
     """
     if total_players <= 4:
         return 1
@@ -302,4 +208,4 @@ def calculate_spy_count(total_players: int) -> int:
     elif total_players <= 10:
         return 3
     else:
-        return min(4, total_players // 3)  # Cap at 4 spies for very large games
+        return min(4, total_players // 3)
